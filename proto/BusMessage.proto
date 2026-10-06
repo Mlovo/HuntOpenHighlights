@@ -1,0 +1,57 @@
+syntax = "proto2";
+
+message BusMessage {
+    required string uniqueid = 1;
+    required string source_system = 2;
+    required string source_module = 3;
+    optional string domain = 4;
+    optional bool joined = 5;
+    optional string target_system = 6;
+    optional string target_module = 7;
+    optional string source_session = 8;
+    optional string source_username = 9;
+    optional string reference_uniqueid = 10;
+    optional uint32 source_pid = 11;
+    optional string target_session = 13;
+    optional string target_username = 14;
+    repeated Peer bus_peer = 15;
+    optional Generic generic = 20;
+    optional Status status = 21;
+    optional EncryptedBusMessage encryptedBusMessage = 22;
+    optional EncryptionSetup encryptionsetup = 200;
+
+    message Generic {
+        optional uint32 type = 1;
+        optional bytes data = 2;
+    }
+
+    message EncryptedBusMessage {
+        enum EncryptionType {
+            NONE = 1;
+            RSA = 2;
+            AES = 3;
+        }
+        optional EncryptionType type = 1;
+        optional bytes data = 2;
+        optional bytes iv = 3;
+    }
+
+    message Status {
+        enum Code {
+            Received = 1;
+            Completed = 2;
+        }
+        optional Code code = 1;
+    }
+
+    message Peer {
+        required string system = 1;
+        required string module = 2;
+        optional string session = 3;
+        optional string username = 4;
+    }
+
+    message EncryptionSetup {
+        optional bytes AESKey = 1;
+    }
+}

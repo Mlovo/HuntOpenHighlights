@@ -1,0 +1,200 @@
+syntax = "proto2";
+
+enum SDKComponent {
+    SDKComponent_CORE = 0;
+    SDKComponent_SHARE = 1;
+    SDKComponent_INSTALLER = 2;
+    SDKComponent_OPS = 3;
+}
+
+enum OverlayVisibility {
+    OverlayVisibility_OPEN = 1;
+    OverlayVisibility_CLOSE = 2;
+    OverlayVisibility_TOGGLE = 3;
+    OverlayVisibility_OPEN_PREFS = 4;
+}
+
+message LocalePair {
+    required string localeCode = 1;
+    required string localizedString = 2;
+}
+
+message ScopePermission {
+    required uint32 scope = 1;
+    required uint32 permission = 2;
+}
+
+message CreateSDKInstanceRequest {
+    required string client = 1;
+    required uint64 clientPID = 2;
+    optional string clientProcessName = 3;
+    optional string gameName = 4;
+    optional string clientGfeVersion = 5;
+    repeated uint32 scopes = 6;
+    optional string clientProcessPath = 7;
+    optional uint64 targetProcessPID = 8;
+    optional string targetProcessName = 9;
+    optional string targetProcessPath = 10;
+}
+
+message DestroySDKInstanceRequest {}
+message IsClientAliveRequest {}
+message GetUILanguageRequest {}
+
+message OpenGroupRequest {
+    required string groupId = 1;
+    repeated LocalePair groupDescriptionLocalePairs = 2;
+}
+
+message CloseGroupRequest {
+    required string groupId = 1;
+    optional bool destroyHighlights = 2;
+}
+
+message GetNumberOfHighlightsInGroupRequest {
+    required string groupId = 1;
+    optional int32 tagFilter = 2;
+    optional int32 significanceFilter = 3;
+}
+
+message SetScreenshotHighlightRequest {
+    required string groupId = 2;
+    required string highlightId = 3;
+}
+
+message SetVideoHighlightRequest {
+    required string groupId = 2;
+    required string highlightId = 3;
+    optional int32 startDelta = 4;
+    optional int32 endDelta = 5;
+    optional uint64 baseTimeStamp = 6;
+}
+
+message OpenGroupSummaryRequest {
+    message GroupSummaryDefinition {
+        required string groupId = 1;
+        optional int32 highlightTags = 2;
+        optional int32 significance = 3;
+    }
+    repeated GroupSummaryDefinition groupTable = 2;
+}
+
+message ToggleOverlayRequest {
+    required OverlayVisibility visibilityType = 1;
+}
+
+message ConfigureHighlightsRequest {
+    message HighlightDefinition {
+        required string highlightId = 1;
+        optional bool userInterest = 3;
+        optional int32 highlightTags = 4;
+        optional int32 significance = 5;
+        optional bytes icon = 6;
+        repeated LocalePair highlightLocaleNamePairs = 7;
+    }
+    optional bytes gameArt = 2;
+    repeated HighlightDefinition highlightTable = 3;
+    optional string defaultLocale = 4;
+}
+
+message GetUserConfigRequest {}
+message RequestPermissionRequest {
+    repeated uint32 scopes = 1;
+}
+message OpsOptimizeRequest {
+    optional string imageFilePath = 1;
+    optional string uwpPackageFamilyName = 2;
+}
+
+message CreateSDKInstanceResponse {
+    optional string installedGfeVersion = 1;
+    optional int32 installedGfeSDKIPCVersionMajor = 2;
+    optional int32 installedGfeSDKIPCVersionMinor = 3;
+    repeated ScopePermission scopePermission = 4;
+}
+
+message GetUILanguageResponse {
+    required string localeName = 1;
+}
+
+message IsClientAliveResponse {
+    required bool alive = 1;
+}
+
+message GetNumberOfHighlightsInGroupResponse {
+    required int32 numberOfHighlights = 1;
+}
+
+message GetUserConfigResponse {
+    message HighlightConfig {
+        required string highlightId = 1;
+        required bool userEnabled = 2;
+    }
+    required bool gameEnabled = 1;
+    repeated HighlightConfig highlightTable = 2;
+}
+
+message PermissionsChangedNotification {
+    repeated ScopePermission scopePermission = 1;
+}
+
+message OverlayStateNotification {
+    required bool open = 1;
+    required int32 state = 2;
+}
+
+message SDKIPCRequest {
+    required int32 version_major = 1;
+    required int32 version_minor = 2;
+    optional int32 version_build = 3;
+    optional string version_hash = 4;
+    required SDKComponent component = 5;
+
+    oneof request {
+        GetUILanguageRequest getUILanguageRequest = 10;
+        OpenGroupRequest openGroupRequest = 11;
+        CloseGroupRequest closeGroupRequest = 12;
+        SetScreenshotHighlightRequest setScreenshotHighlightRequest = 13;
+        SetVideoHighlightRequest setVideoHighlightRequest = 14;
+        ToggleOverlayRequest toggleOverlayRequest = 15;
+        ConfigureHighlightsRequest configureHighlightsRequest = 16;
+        OpenGroupSummaryRequest openGroupSummaryRequest = 17;
+        CreateSDKInstanceRequest createSDKInstanceRequest = 19;
+        DestroySDKInstanceRequest destroySDKInstanceRequest = 20;
+        IsClientAliveRequest isClientAliveRequest = 21;
+        GetNumberOfHighlightsInGroupRequest getNumberOfHighlightsInGroupRequest = 22;
+        GetUserConfigRequest getUserConfigRequest = 23;
+        RequestPermissionRequest requestPermissionRequest = 24;
+        OpsOptimizeRequest opsOptimizeRequest = 25;
+    }
+}
+
+message SDKIPCResponse {
+    required int32 retval = 1;
+    optional string retstatus = 2;
+
+    oneof response {
+        GetUILanguageResponse getUILanguageResponse = 10;
+        CreateSDKInstanceResponse createSDKInstanceResponse = 11;
+        IsClientAliveResponse isClientAliveResponse = 12;
+        GetNumberOfHighlightsInGroupResponse getNumberOfHighlightsInGroupResponse = 13;
+        GetUserConfigResponse getUserConfigResponse = 14;
+    }
+}
+
+message SDKIPCNotification {
+    required SDKComponent component = 1;
+
+    oneof notification {
+        PermissionsChangedNotification permissionsChangedNotification = 10;
+        OverlayStateNotification overlayStateNotification = 11;
+    }
+}
+
+message SDKIPCMessage {
+    oneof message {
+        SDKIPCRequest request = 1;
+        SDKIPCResponse response = 2;
+        SDKIPCNotification notification = 3;
+    }
+}

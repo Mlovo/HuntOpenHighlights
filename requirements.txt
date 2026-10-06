@@ -1,0 +1,2 @@
+pywin32>=306
+protobuf>=4.21.0
