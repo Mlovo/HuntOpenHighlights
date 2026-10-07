@@ -20,30 +20,16 @@ if PROTO_DIR not in sys.path:
 
 import BusMessage_pb2
 import sdk_pb2
+from recorder import HighlightRecorder
 
 PIPE_NAME = r"\\.\pipe\NvMessageBusBroadcast"
-
-# Output log path on user desktop
-USER_PROFILE = os.environ.get("USERPROFILE", "C:")
-DESKTOP_DIR = os.path.join(USER_PROFILE, "Desktop")
-HIGHLIGHTS_LOG = os.path.join(DESKTOP_DIR, "HuntHighlights.log")
 
 def log(msg):
     ts = time.strftime("%H:%M:%S")
     print(f"[{ts}] {msg}", flush=True)
 
-def record_highlight_event(event_type, group_id, highlight_id, start_delta, end_delta):
-    ts = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{ts}] EVENT: {event_type} | GROUP: {group_id} | ID: {highlight_id} | START: {start_delta}ms | END: {end_delta}ms\n"
-    log("=" * 64)
-    log(f"*** HIGHLIGHT EVENT DETECTED: {highlight_id} (Window: {start_delta}ms .. +{end_delta}ms) ***")
-    log("=" * 64)
-    try:
-        with open(HIGHLIGHTS_LOG, "a", encoding="utf-8") as f:
-            f.write(line)
-        log(f"Logged to: {HIGHLIGHTS_LOG}")
-    except Exception as e:
-        log(f"Error writing highlight log: {e}")
+# Initialize capture recorder manager (ReLive / OBS)
+recorder = HighlightRecorder(log_callback=log)
 
 def send_bus_message(pipe, msg):
     payload = msg.SerializeToString()
@@ -156,11 +142,11 @@ def handle_client(pipe, client_id):
 
                         elif req_type == "setVideoHighlightRequest":
                             vh = req.setVideoHighlightRequest
-                            record_highlight_event("VIDEO", vh.groupId, vh.highlightId, vh.startDelta, vh.endDelta)
+                            recorder.trigger_highlight("VIDEO", vh.groupId, vh.highlightId, vh.startDelta, vh.endDelta)
 
                         elif req_type == "setScreenshotHighlightRequest":
                             sh = req.setScreenshotHighlightRequest
-                            record_highlight_event("SCREENSHOT", sh.groupId, sh.highlightId, 0, 0)
+                            recorder.trigger_highlight("SCREENSHOT", sh.groupId, sh.highlightId, 0, 0)
 
                         elif req_type == "getUserConfigRequest":
                             uc = resp_sdk.response.getUserConfigResponse
@@ -232,7 +218,9 @@ def main():
     print("  HuntOpenHighlights - NVIDIA Highlights Emulator for AMD GPUs")
     print("=" * 64)
     print(f"[*] Pipe: {PIPE_NAME}")
-    print(f"[*] Highlights output log: {HIGHLIGHTS_LOG}")
+    print(f"[*] Capture Mode: {recorder.config.get('mode', 'relive').upper()}")
+    if recorder.config.get('log_to_desktop', False):
+        print(f"[*] Desktop Log: {recorder.desktop_log_path}")
     print("[*] Ready. Launch Hunt: Showdown 1896 to begin.\n")
 
     t = threading.Thread(target=pipe_server, daemon=True)
