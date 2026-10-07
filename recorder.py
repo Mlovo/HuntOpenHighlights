@@ -171,6 +171,7 @@ class HighlightRecorder:
         elif mode == "obs":
             self.log_callback(f"[Recorder] OBS WebSocket target: {self.config['obs']['host']}:{self.config['obs']['port']}")
             self.log_callback(f"[Recorder] Coalescing delay: {self.config['obs']['post_event_delay_sec']}s")
+            threading.Thread(target=self._try_init_obs, daemon=True).start()
 
     def _default_log(self, msg):
         ts = time.strftime("%H:%M:%S")
@@ -291,6 +292,26 @@ class HighlightRecorder:
             self.log_callback(f"[Recorder] SUCCESS: Sent AMD ReLive shortcut ({hotkey_str})! Replay saved.")
         except Exception as e:
             self.log_callback(f"[Recorder] ERROR sending ReLive hotkey: {e}")
+
+    def _try_init_obs(self):
+        try:
+            import obsws_python as obs
+            obs_cfg = self.config.get("obs", {})
+            cl = obs.ReqClient(
+                host=obs_cfg.get("host", "localhost"),
+                port=obs_cfg.get("port", 4455),
+                password=obs_cfg.get("password", ""),
+                timeout=2
+            )
+            status = cl.get_replay_buffer_status()
+            if not status.output_active and obs_cfg.get("auto_start_replay_buffer", True):
+                cl.start_replay_buffer()
+                self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer started automatically!")
+            else:
+                self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer is active.")
+        except Exception:
+            # OBS not open yet; will connect on demand
+            pass
 
     def _save_obs(self, events):
         try:

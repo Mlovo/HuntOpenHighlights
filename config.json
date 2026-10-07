@@ -1,5 +1,5 @@
 {
-    "mode": "relive",
+    "mode": "obs",
     "relive": {
         "hotkey": "auto",
         "post_event_delay_sec": 7.0,
