@@ -12,7 +12,9 @@
         "post_event_delay_sec": 7.0,
         "max_coalesce_sec": 60.0,
         "auto_start_replay_buffer": true,
-        "auto_rename_clips": true
+        "auto_rename_clips": true,
+        "smart_trim": true,
+        "min_clip_sec": 20.0
     },
     "enabled_events": [
         "HUNTER_KILLED",

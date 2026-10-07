@@ -84,7 +84,9 @@ DEFAULT_CONFIG = {
         "post_event_delay_sec": 7.0,
         "max_coalesce_sec": 60.0,
         "auto_start_replay_buffer": True,
-        "auto_rename_clips": True
+        "auto_rename_clips": True,
+        "smart_trim": True,
+        "min_clip_sec": 20.0
     },
     "enabled_events": [
         "HUNTER_KILLED",
@@ -135,6 +137,68 @@ def press_hotkey(keys):
         scan = win32api.MapVirtualKey(vk, 0)
         win32api.keybd_event(vk, scan, win32con.KEYEVENTF_KEYUP, 0)
 
+def trim_clip_lossless(src_path, target_duration, log_func=print):
+    """
+    Losslessly trims the beginning of a video clip to keep only the target combat duration.
+    Uses -c copy (zero re-encoding, lossless stream copy, ~0.15s execution).
+    """
+    try:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        ffmpeg_exe = "ffmpeg"
+
+    import subprocess
+    import re
+
+    # Probe duration
+    try:
+        probe = subprocess.run([ffmpeg_exe, "-i", src_path], capture_output=True, text=True, errors="ignore")
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", probe.stderr)
+        if not m:
+            return False
+        h, mins, s = map(float, m.groups())
+        total_duration = h * 3600 + mins * 60 + s
+    except Exception as e:
+        log_func(f"[Recorder] Probe error: {e}")
+        return False
+
+    # Only trim if video is longer than target_duration + 3.0s buffer
+    if total_duration <= target_duration + 3.0:
+        return False
+
+    cut_offset = max(0.0, total_duration - target_duration)
+    tmp_path = src_path + ".tmp.mp4"
+
+    cmd = [
+        ffmpeg_exe,
+        "-y",
+        "-ss", str(round(cut_offset, 2)),
+        "-i", src_path,
+        "-c", "copy",
+        tmp_path
+    ]
+
+    try:
+        t0 = time.time()
+        res = subprocess.run(cmd, capture_output=True, text=True, errors="ignore")
+        if res.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 1000:
+            os.replace(tmp_path, src_path)
+            dt = time.time() - t0
+            log_func(f"[Recorder] Lossless Smart Trim: reduced clip from {total_duration:.1f}s to {target_duration:.1f}s in {dt:.2f}s!")
+            return True
+        else:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    except Exception as e:
+        log_func(f"[Recorder] Trim error: {e}")
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+    return False
+
 class HighlightRecorder:
     def __init__(self, config_path="config.json", log_callback=None):
         self.config_path = os.path.abspath(config_path)
@@ -147,6 +211,7 @@ class HighlightRecorder:
         self.relive_hotkey = ["ctrl", "shift", "s"]
         self._obs_event_client = None
         self._pending_rename_events = []
+        self._combat_start_time = None
 
         # Optional desktop log path
         user_profile = os.environ.get("USERPROFILE", "C:")
@@ -239,6 +304,11 @@ class HighlightRecorder:
             now = time.time()
             self._pending_events.append(highlight_id)
 
+            # Track start of combat sequence based on game startDelta
+            event_start_delta = (start_delta_ms / 1000.0) if start_delta_ms else -20.0
+            if self._combat_start_time is None:
+                self._combat_start_time = now + event_start_delta
+
             if self._batch_start_time is None:
                 self._batch_start_time = now
 
@@ -273,18 +343,27 @@ class HighlightRecorder:
             self._pending_events.clear()
             self._batch_start_time = None
             self._timer = None
+            combat_start = self._combat_start_time
+            self._combat_start_time = None
 
         if not events:
             return
 
+        now = time.time()
+        min_sec = self.config.get("obs", {}).get("min_clip_sec", 20.0)
+        if combat_start:
+            target_duration = max(min_sec, (now - combat_start) + 1.0)
+        else:
+            target_duration = 25.0
+
         mode = self.config.get("mode", "relive").lower()
         events_summary = ", ".join(events)
-        self.log_callback(f"[Recorder] >>> Triggering replay capture for: [{events_summary}] <<<")
+        self.log_callback(f"[Recorder] >>> Triggering replay capture for: [{events_summary}] (dynamic duration: {target_duration:.1f}s) <<<")
 
         if mode == "relive":
             self._save_relive(events)
         elif mode == "obs":
-            self._save_obs(events)
+            self._save_obs(events, target_duration)
         else:
             self.log_callback(f"[Recorder] Unknown recording mode: '{mode}'")
 
@@ -334,57 +413,68 @@ class HighlightRecorder:
             return
 
         with self._lock:
-            events = list(self._pending_rename_events)
-            self._pending_rename_events.clear()
+            payload = self._pending_rename_events
+            self._pending_rename_events = None
+
+        if isinstance(payload, tuple) and len(payload) == 2:
+            events, target_duration = payload
+        elif payload:
+            events = list(payload)
+            target_duration = 25.0
+        else:
+            events = ["HIGHLIGHT"]
+            target_duration = 25.0
 
         if not self.config.get("obs", {}).get("auto_rename_clips", True):
             self.log_callback(f"[Recorder] OBS Replay saved: {os.path.basename(orig_path)}")
-            return
+            final_path = orig_path
+        else:
+            from collections import Counter
+            counts = Counter(events)
+            tag_parts = []
+            for ev, cnt in counts.items():
+                if cnt > 1:
+                    tag_parts.append(f"{ev}_x{cnt}")
+                else:
+                    tag_parts.append(ev)
+            tag = "_".join(tag_parts)
 
-        if not events:
-            events = ["HIGHLIGHT"]
+            dir_name = os.path.dirname(orig_path)
+            base_name = os.path.basename(orig_path)
 
-        from collections import Counter
-        counts = Counter(events)
-        tag_parts = []
-        for ev, cnt in counts.items():
-            if cnt > 1:
-                tag_parts.append(f"{ev}_x{cnt}")
+            if not base_name.startswith("Hunt_"):
+                new_name = f"Hunt_{tag}_{base_name}"
+                new_path = os.path.join(dir_name, new_name)
+                
+                # Retry loop in case OBS has the file handle temporarily open
+                renamed = False
+                for _ in range(15):
+                    time.sleep(0.2)
+                    try:
+                        os.rename(orig_path, new_path)
+                        renamed = True
+                        break
+                    except PermissionError:
+                        continue
+                    except Exception as e:
+                        self.log_callback(f"[Recorder] Rename error: {e}")
+                        break
+
+                if renamed:
+                    self.log_callback(f"[Recorder] SUCCESS: Replay saved & renamed to -> {new_name}")
+                    final_path = new_path
+                else:
+                    self.log_callback(f"[Recorder] Replay saved as {base_name} (file busy)")
+                    final_path = orig_path
             else:
-                tag_parts.append(ev)
-        tag = "_".join(tag_parts)
+                self.log_callback(f"[Recorder] SUCCESS: Replay saved: {base_name}")
+                final_path = orig_path
 
-        dir_name = os.path.dirname(orig_path)
-        base_name = os.path.basename(orig_path)
+        # If smart_trim is enabled, dynamically trim unneeded dead-air before the fight
+        if self.config.get("obs", {}).get("smart_trim", True) and target_duration and os.path.exists(final_path):
+            trim_clip_lossless(final_path, target_duration, log_func=self.log_callback)
 
-        if not base_name.startswith("Hunt_"):
-            new_name = f"Hunt_{tag}_{base_name}"
-            new_path = os.path.join(dir_name, new_name)
-            
-            # Retry loop in case OBS has the file handle temporarily open
-            renamed = False
-            for _ in range(15):
-                time.sleep(0.2)
-                try:
-                    os.rename(orig_path, new_path)
-                    renamed = True
-                    break
-                except PermissionError:
-                    continue
-                except Exception as e:
-                    self.log_callback(f"[Recorder] Rename error: {e}")
-                    break
-
-            if renamed:
-                self.log_callback(f"[Recorder] SUCCESS: Replay saved & renamed to -> {new_name}")
-                return
-            else:
-                self.log_callback(f"[Recorder] Replay saved as {base_name} (file busy)")
-                return
-
-        self.log_callback(f"[Recorder] SUCCESS: Replay saved: {base_name}")
-
-    def _save_obs(self, events):
+    def _save_obs(self, events, target_duration=25.0):
         try:
             import obsws_python as obs
         except ImportError:
@@ -397,7 +487,7 @@ class HighlightRecorder:
         password = obs_cfg.get("password", "")
 
         with self._lock:
-            self._pending_rename_events = list(events)
+            self._pending_rename_events = (list(events), target_duration)
 
         try:
             cl = obs.ReqClient(host=host, port=port, password=password, timeout=3)

@@ -114,7 +114,9 @@
         "post_event_delay_sec": 7.0,
         "max_coalesce_sec": 60.0,
         "auto_start_replay_buffer": true,
-        "auto_rename_clips": true
+        "auto_rename_clips": true,
+        "smart_trim": true,
+        "min_clip_sec": 20.0
     },
     "enabled_events": [
         "HUNTER_KILLED",
@@ -129,7 +131,9 @@
   * `"obs"` — сохранение через OBS Studio Replay Buffer (WebSocket API, 0 нажатий клавиш).
   * `"relive"` — сохранение через AMD Radeon Instant Replay.
   * `"disabled"` — режим только мониторинга событий без записи.
-* **`obs.auto_rename_clips`**: автоматически переименовывать сохранённые клипы с понятными тегами (например, `Hunt_HUNTER_KILLED_Replay...mp4` или `Hunt_HUNTER_KILLED_x3_Replay...mp4` при мультикиллах).
+* **`obs.smart_trim`**: динамическая длительность клипов! Мгновенно (за 0.1 сек, без перекодирования) отрезает лишнее пустое начало клипа, оставляя только саму перестрелку (~25 сек на одиночный фраг, ~40-50 сек на серию фрагов).
+* **`obs.min_clip_sec`**: минимальная длительность клипа в секундах (по умолчанию 20 сек).
+* **`obs.auto_rename_clips`**: автоматически переименовывать сохранённые клипы с понятными тегами (`Hunt_HUNTER_KILLED_...`, `Hunt_HUNTER_KILLED_x3_...` и т.д.).
 * **`relive.hotkey`**: 
   * `"auto"` — автоматическое считывание текущей горячей клавиши прямо из реестра AMD Adrenalin.
   * Или вручную список: например `["ctrl", "alt", "f10"]`, `["ctrl", "shift", "s"]`.
