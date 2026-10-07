@@ -83,7 +83,8 @@ DEFAULT_CONFIG = {
         "password": "",
         "post_event_delay_sec": 7.0,
         "max_coalesce_sec": 60.0,
-        "auto_start_replay_buffer": True
+        "auto_start_replay_buffer": True,
+        "auto_rename_clips": True
     },
     "enabled_events": [
         "HUNTER_KILLED",
@@ -144,6 +145,8 @@ class HighlightRecorder:
         self._pending_events = []
         self._batch_start_time = None
         self.relive_hotkey = ["ctrl", "shift", "s"]
+        self._obs_event_client = None
+        self._pending_rename_events = []
 
         # Optional desktop log path
         user_profile = os.environ.get("USERPROFILE", "C:")
@@ -297,21 +300,76 @@ class HighlightRecorder:
         try:
             import obsws_python as obs
             obs_cfg = self.config.get("obs", {})
-            cl = obs.ReqClient(
-                host=obs_cfg.get("host", "localhost"),
-                port=obs_cfg.get("port", 4455),
-                password=obs_cfg.get("password", ""),
-                timeout=2
-            )
-            status = cl.get_replay_buffer_status()
-            if not status.output_active and obs_cfg.get("auto_start_replay_buffer", True):
-                cl.start_replay_buffer()
-                self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer started automatically!")
-            else:
-                self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer is active.")
+            host = obs_cfg.get("host", "localhost")
+            port = obs_cfg.get("port", 4455)
+            password = obs_cfg.get("password", "")
+
+            # 1. Connect ReqClient
+            cl = obs.ReqClient(host=host, port=port, password=password, timeout=2)
+            try:
+                status = cl.get_replay_buffer_status()
+                if not status.output_active and obs_cfg.get("auto_start_replay_buffer", True):
+                    cl.start_replay_buffer()
+                    self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer started automatically!")
+                else:
+                    self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer is active.")
+            except Exception as e:
+                self.log_callback(f"[Recorder] OBS connected, but Replay Buffer not active in settings ({e}).")
+
+            # 2. Connect EventClient for auto-renaming clips
+            if self._obs_event_client is None and obs_cfg.get("auto_rename_clips", True):
+                try:
+                    self._obs_event_client = obs.EventClient(host=host, port=port, password=password, timeout=2)
+                    self._obs_event_client.callback.register(self._on_obs_replay_saved)
+                    self.log_callback("[Recorder] OBS auto-renaming listener active.")
+                except Exception as e:
+                    self.log_callback(f"[Recorder] Notice: OBS EventClient listener not started: {e}")
         except Exception:
             # OBS not open yet; will connect on demand
             pass
+
+    def _on_obs_replay_saved(self, data):
+        orig_path = getattr(data, "saved_replay_path", None)
+        if not orig_path:
+            return
+
+        with self._lock:
+            events = list(self._pending_rename_events)
+            self._pending_rename_events.clear()
+
+        if not self.config.get("obs", {}).get("auto_rename_clips", True):
+            self.log_callback(f"[Recorder] OBS Replay saved: {os.path.basename(orig_path)}")
+            return
+
+        if not events:
+            events = ["HIGHLIGHT"]
+
+        from collections import Counter
+        counts = Counter(events)
+        tag_parts = []
+        for ev, cnt in counts.items():
+            if cnt > 1:
+                tag_parts.append(f"{ev}_x{cnt}")
+            else:
+                tag_parts.append(ev)
+        tag = "_".join(tag_parts)
+
+        dir_name = os.path.dirname(orig_path)
+        base_name = os.path.basename(orig_path)
+
+        if not base_name.startswith("Hunt_"):
+            new_name = f"Hunt_{tag}_{base_name}"
+            new_path = os.path.join(dir_name, new_name)
+            time.sleep(0.3)
+            try:
+                os.rename(orig_path, new_path)
+                self.log_callback(f"[Recorder] SUCCESS: Replay saved & renamed to -> {new_name}")
+                return
+            except Exception as e:
+                self.log_callback(f"[Recorder] Replay saved as {base_name} (Rename notice: {e})")
+                return
+
+        self.log_callback(f"[Recorder] SUCCESS: Replay saved: {base_name}")
 
     def _save_obs(self, events):
         try:
@@ -324,6 +382,9 @@ class HighlightRecorder:
         host = obs_cfg.get("host", "localhost")
         port = obs_cfg.get("port", 4455)
         password = obs_cfg.get("password", "")
+
+        with self._lock:
+            self._pending_rename_events = list(events)
 
         try:
             cl = obs.ReqClient(host=host, port=port, password=password, timeout=3)
@@ -339,6 +400,6 @@ class HighlightRecorder:
                     return
 
             cl.save_replay_buffer()
-            self.log_callback("[Recorder] SUCCESS: OBS Replay Buffer saved via WebSocket!")
+            self.log_callback("[Recorder] Command sent: OBS Replay Buffer saving to disk...")
         except Exception as e:
             self.log_callback(f"[Recorder] ERROR communicating with OBS Studio: {e}")
