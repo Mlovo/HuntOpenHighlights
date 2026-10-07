@@ -28,7 +28,7 @@ def log(msg):
     ts = time.strftime("%H:%M:%S")
     print(f"[{ts}] {msg}", flush=True)
 
-# Initialize capture recorder manager (ReLive / OBS)
+# Initialize capture recorder manager (OBS Studio WebSocket)
 recorder = HighlightRecorder(log_callback=log)
 
 def send_bus_message(pipe, msg):
@@ -215,10 +215,10 @@ def pipe_server():
 
 def main():
     print("=" * 64)
-    print("  HuntOpenHighlights - NVIDIA Highlights Emulator for AMD GPUs")
+    print("  HuntOpenHighlights - NVIDIA Highlights Emulator for AMD & non-RTX GPUs")
     print("=" * 64)
     print(f"[*] Pipe: {PIPE_NAME}")
-    print(f"[*] Capture Mode: {recorder.config.get('mode', 'relive').upper()}")
+    print("[*] Capture Backend: OBS Studio Replay Buffer (WebSocket API)")
     if recorder.config.get('log_to_desktop', False):
         print(f"[*] Desktop Log: {recorder.desktop_log_path}")
     print("[*] Ready. Launch Hunt: Showdown 1896 to begin.\n")

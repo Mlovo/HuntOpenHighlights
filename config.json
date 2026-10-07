@@ -1,10 +1,4 @@
 {
-    "mode": "obs",
-    "relive": {
-        "hotkey": "auto",
-        "post_event_delay_sec": 7.0,
-        "max_coalesce_sec": 60.0
-    },
     "obs": {
         "host": "localhost",
         "port": 4455,

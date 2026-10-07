@@ -1,82 +1,18 @@
 """
 HuntOpenHighlights - Recording & Capture Manager
-Handles automated capture for AMD ReLive and OBS Studio Replay Buffer
-with intelligent multi-kill coalescing (debounce).
+Dedicated to OBS Studio Replay Buffer via WebSocket Protocol v5.
+Zero keystroke emulation, lossless dynamic trimming, and smart multi-kill coalescing.
 """
 import os
 import sys
 import json
 import time
 import threading
-import winreg
-import win32api
-import win32con
-
-VK_MAP = {
-    # Modifiers
-    "ctrl": win32con.VK_CONTROL,
-    "control": win32con.VK_CONTROL,
-    "shift": win32con.VK_SHIFT,
-    "alt": win32con.VK_MENU,
-    # Isolated / special keys
-    "scroll_lock": win32con.VK_SCROLL,
-    "scrolllock": win32con.VK_SCROLL,
-    "scroll": win32con.VK_SCROLL,
-    "pause": win32con.VK_PAUSE,
-    "break": win32con.VK_PAUSE,
-    "insert": win32con.VK_INSERT,
-    "delete": win32con.VK_DELETE,
-    "home": win32con.VK_HOME,
-    "end": win32con.VK_END,
-    "pageup": win32con.VK_PRIOR,
-    "pagedown": win32con.VK_NEXT,
-    "printscreen": win32con.VK_SNAPSHOT,
-    "prntscrn": win32con.VK_SNAPSHOT,
-    # Function keys (F1 - F24)
-    "f1": win32con.VK_F1,
-    "f2": win32con.VK_F2,
-    "f3": win32con.VK_F3,
-    "f4": win32con.VK_F4,
-    "f5": win32con.VK_F5,
-    "f6": win32con.VK_F6,
-    "f7": win32con.VK_F7,
-    "f8": win32con.VK_F8,
-    "f9": win32con.VK_F9,
-    "f10": win32con.VK_F10,
-    "f11": win32con.VK_F11,
-    "f12": win32con.VK_F12,
-    "f13": 0x7C,
-    "f14": 0x7D,
-    "f15": 0x7E,
-    "f16": 0x7F,
-    "f17": 0x80,
-    "f18": 0x81,
-    "f19": 0x82,
-    "f20": 0x83,
-    "f21": 0x84,
-    "f22": 0x85,
-    "f23": 0x86,
-    "f24": 0x87,
-    # Numpad
-    "numpad0": win32con.VK_NUMPAD0,
-    "numpad1": win32con.VK_NUMPAD1,
-    "numpad2": win32con.VK_NUMPAD2,
-    "numpad3": win32con.VK_NUMPAD3,
-    "numpad4": win32con.VK_NUMPAD4,
-    "numpad5": win32con.VK_NUMPAD5,
-    "numpad6": win32con.VK_NUMPAD6,
-    "numpad7": win32con.VK_NUMPAD7,
-    "numpad8": win32con.VK_NUMPAD8,
-    "numpad9": win32con.VK_NUMPAD9,
-}
+import subprocess
+import re
+from collections import Counter
 
 DEFAULT_CONFIG = {
-    "mode": "relive",
-    "relive": {
-        "hotkey": "auto",
-        "post_event_delay_sec": 7.0,
-        "max_coalesce_sec": 60.0
-    },
     "obs": {
         "host": "localhost",
         "port": 4455,
@@ -95,48 +31,6 @@ DEFAULT_CONFIG = {
     "log_to_desktop": False
 }
 
-def get_amd_registered_hotkey():
-    """Reads the current Instant Replay hotkey configured in AMD Adrenalin from Windows Registry."""
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\AMD\DVR") as key:
-            val, _ = winreg.QueryValueEx(key, "SaveInstantReplayHotkey")
-            if val:
-                parts = []
-                if "," in val:
-                    mods, k = val.split(",", 1)
-                    for m in mods.split("+"):
-                        m_str = m.strip().lower()
-                        if m_str and m_str != "none":
-                            parts.append(m_str)
-                    if k.strip():
-                        parts.append(k.strip().lower())
-                else:
-                    parts.append(val.strip().lower())
-                return parts
-    except Exception:
-        pass
-    return None
-
-def resolve_key(key_str):
-    k = str(key_str).lower().strip().replace(" ", "_")
-    if k in VK_MAP:
-        return VK_MAP[k]
-    if len(k) == 1:
-        return ord(k.upper())
-    raise ValueError(f"Unknown key in hotkey config: '{key_str}'")
-
-def press_hotkey(keys):
-    vk_codes = [resolve_key(k) for k in keys]
-    # Key Down in order
-    for vk in vk_codes:
-        scan = win32api.MapVirtualKey(vk, 0)
-        win32api.keybd_event(vk, scan, 0, 0)
-    time.sleep(0.06)
-    # Key Up in reverse order
-    for vk in reversed(vk_codes):
-        scan = win32api.MapVirtualKey(vk, 0)
-        win32api.keybd_event(vk, scan, win32con.KEYEVENTF_KEYUP, 0)
-
 def trim_clip_lossless(src_path, target_duration, log_func=print):
     """
     Losslessly trims the beginning of a video clip to keep only the target combat duration.
@@ -147,9 +41,6 @@ def trim_clip_lossless(src_path, target_duration, log_func=print):
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:
         ffmpeg_exe = "ffmpeg"
-
-    import subprocess
-    import re
 
     # Probe duration
     try:
@@ -208,38 +99,22 @@ class HighlightRecorder:
         self._timer = None
         self._pending_events = []
         self._batch_start_time = None
-        self.relive_hotkey = ["ctrl", "shift", "s"]
         self._obs_event_client = None
-        self._pending_rename_events = []
+        self._pending_rename_events = None
         self._combat_start_time = None
 
         # Optional desktop log path
         user_profile = os.environ.get("USERPROFILE", "C:")
         self.desktop_log_path = os.path.join(user_profile, "Desktop", "HuntHighlights.log")
 
-        mode = self.config.get("mode", "relive").lower()
-        self.log_callback(f"[Recorder] Mode initialized: '{mode.upper()}'")
-        if mode == "relive":
-            configured_hotkey = self.config.get("relive", {}).get("hotkey", "auto")
-            if configured_hotkey == "auto" or not configured_hotkey:
-                detected = get_amd_registered_hotkey()
-                if detected:
-                    self.relive_hotkey = detected
-                    self.log_callback(f"[Recorder] Auto-detected AMD ReLive hotkey from Windows Registry: {'+'.join(detected).upper()}")
-                else:
-                    self.relive_hotkey = ["ctrl", "shift", "s"]
-            elif isinstance(configured_hotkey, list):
-                self.relive_hotkey = configured_hotkey
-            else:
-                self.relive_hotkey = [str(configured_hotkey)]
+        obs_cfg = self.config.get("obs", {})
+        self.log_callback(f"[Recorder] OBS WebSocket target: {obs_cfg.get('host', 'localhost')}:{obs_cfg.get('port', 4455)}")
+        self.log_callback(f"[Recorder] Coalescing delay: {obs_cfg.get('post_event_delay_sec', 7.0)}s (max {obs_cfg.get('max_coalesce_sec', 60.0)}s)")
+        if obs_cfg.get("smart_trim", True):
+            self.log_callback("[Recorder] Lossless Smart Trim: ENABLED (dynamic clip duration)")
 
-            hotkey_str = "+".join(self.relive_hotkey).upper()
-            self.log_callback(f"[Recorder] Active AMD ReLive hotkey: {hotkey_str}")
-            self.log_callback(f"[Recorder] Coalescing delay: {self.config['relive']['post_event_delay_sec']}s (max {self.config['relive']['max_coalesce_sec']}s)")
-        elif mode == "obs":
-            self.log_callback(f"[Recorder] OBS WebSocket target: {self.config['obs']['host']}:{self.config['obs']['port']}")
-            self.log_callback(f"[Recorder] Coalescing delay: {self.config['obs']['post_event_delay_sec']}s")
-            threading.Thread(target=self._try_init_obs, daemon=True).start()
+        # Connect and auto-start replay buffer in background thread
+        threading.Thread(target=self._try_init_obs, daemon=True).start()
 
     def _default_log(self, msg):
         ts = time.strftime("%H:%M:%S")
@@ -264,6 +139,38 @@ class HighlightRecorder:
             self.log_callback(f"[Recorder] Error reading {self.config_path}: {e}. Using defaults.")
             return DEFAULT_CONFIG.copy()
 
+    def _try_init_obs(self):
+        try:
+            import obsws_python as obs
+            obs_cfg = self.config.get("obs", {})
+            host = obs_cfg.get("host", "localhost")
+            port = obs_cfg.get("port", 4455)
+            password = obs_cfg.get("password", "")
+
+            # 1. Connect ReqClient to manage replay buffer
+            cl = obs.ReqClient(host=host, port=port, password=password, timeout=2)
+            try:
+                status = cl.get_replay_buffer_status()
+                if not status.output_active and obs_cfg.get("auto_start_replay_buffer", True):
+                    cl.start_replay_buffer()
+                    self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer started automatically!")
+                else:
+                    self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer is active.")
+            except Exception as e:
+                self.log_callback(f"[Recorder] OBS connected, but Replay Buffer not active in settings ({e}).")
+
+            # 2. Connect EventClient for auto-renaming and smart trimming
+            if self._obs_event_client is None and obs_cfg.get("auto_rename_clips", True):
+                try:
+                    self._obs_event_client = obs.EventClient(host=host, port=port, password=password, timeout=2)
+                    self._obs_event_client.callback.register(self.on_replay_buffer_saved)
+                    self.log_callback("[Recorder] OBS auto-renaming listener active.")
+                except Exception as e:
+                    self.log_callback(f"[Recorder] Notice: OBS EventClient listener not started: {e}")
+        except Exception:
+            # OBS not open yet; will connect on demand when events arrive
+            pass
+
     def trigger_highlight(self, event_type, group_id, highlight_id, start_delta_ms, end_delta_ms):
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
         self.log_callback("=" * 64)
@@ -286,15 +193,9 @@ class HighlightRecorder:
             self.log_callback(f"[Recorder] Event '{highlight_id}' is not in enabled_events list. Skipping capture.")
             return
 
-        mode = self.config.get("mode", "relive").lower()
-        if mode == "disabled":
-            self.log_callback("[Recorder] Recording mode is set to 'disabled'.")
-            return
-
-        # Coalescing calculation
-        cfg_section = self.config.get(mode, {})
-        base_delay = cfg_section.get("post_event_delay_sec", 7.0)
-        max_coalesce = cfg_section.get("max_coalesce_sec", 60.0)
+        obs_cfg = self.config.get("obs", {})
+        base_delay = obs_cfg.get("post_event_delay_sec", 7.0)
+        max_coalesce = obs_cfg.get("max_coalesce_sec", 60.0)
 
         # Calculate time to wait: game's endDelta + buffer
         game_delay = (end_delta_ms / 1000.0) + 1.0 if end_delta_ms > 0 else 0
@@ -356,56 +257,9 @@ class HighlightRecorder:
         else:
             target_duration = 25.0
 
-        mode = self.config.get("mode", "relive").lower()
         events_summary = ", ".join(events)
         self.log_callback(f"[Recorder] >>> Triggering replay capture for: [{events_summary}] (dynamic duration: {target_duration:.1f}s) <<<")
-
-        if mode == "relive":
-            self._save_relive(events)
-        elif mode == "obs":
-            self._save_obs(events, target_duration)
-        else:
-            self.log_callback(f"[Recorder] Unknown recording mode: '{mode}'")
-
-    def _save_relive(self, events):
-        hotkey_str = "+".join(self.relive_hotkey).upper()
-        try:
-            press_hotkey(self.relive_hotkey)
-            self.log_callback(f"[Recorder] SUCCESS: Sent AMD ReLive shortcut ({hotkey_str})! Replay saved.")
-        except Exception as e:
-            self.log_callback(f"[Recorder] ERROR sending ReLive hotkey: {e}")
-
-    def _try_init_obs(self):
-        try:
-            import obsws_python as obs
-            obs_cfg = self.config.get("obs", {})
-            host = obs_cfg.get("host", "localhost")
-            port = obs_cfg.get("port", 4455)
-            password = obs_cfg.get("password", "")
-
-            # 1. Connect ReqClient
-            cl = obs.ReqClient(host=host, port=port, password=password, timeout=2)
-            try:
-                status = cl.get_replay_buffer_status()
-                if not status.output_active and obs_cfg.get("auto_start_replay_buffer", True):
-                    cl.start_replay_buffer()
-                    self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer started automatically!")
-                else:
-                    self.log_callback("[Recorder] Connected to OBS Studio: Replay Buffer is active.")
-            except Exception as e:
-                self.log_callback(f"[Recorder] OBS connected, but Replay Buffer not active in settings ({e}).")
-
-            # 2. Connect EventClient for auto-renaming clips
-            if self._obs_event_client is None and obs_cfg.get("auto_rename_clips", True):
-                try:
-                    self._obs_event_client = obs.EventClient(host=host, port=port, password=password, timeout=2)
-                    self._obs_event_client.callback.register(self.on_replay_buffer_saved)
-                    self.log_callback("[Recorder] OBS auto-renaming listener active.")
-                except Exception as e:
-                    self.log_callback(f"[Recorder] Notice: OBS EventClient listener not started: {e}")
-        except Exception:
-            # OBS not open yet; will connect on demand
-            pass
+        self._save_obs(events, target_duration)
 
     def on_replay_buffer_saved(self, data):
         orig_path = getattr(data, "saved_replay_path", None)
@@ -429,7 +283,6 @@ class HighlightRecorder:
             self.log_callback(f"[Recorder] OBS Replay saved: {os.path.basename(orig_path)}")
             final_path = orig_path
         else:
-            from collections import Counter
             counts = Counter(events)
             tag_parts = []
             for ev, cnt in counts.items():
