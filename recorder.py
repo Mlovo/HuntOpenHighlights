@@ -320,7 +320,7 @@ class HighlightRecorder:
             if self._obs_event_client is None and obs_cfg.get("auto_rename_clips", True):
                 try:
                     self._obs_event_client = obs.EventClient(host=host, port=port, password=password, timeout=2)
-                    self._obs_event_client.callback.register(self._on_obs_replay_saved)
+                    self._obs_event_client.callback.register(self.on_replay_buffer_saved)
                     self.log_callback("[Recorder] OBS auto-renaming listener active.")
                 except Exception as e:
                     self.log_callback(f"[Recorder] Notice: OBS EventClient listener not started: {e}")
@@ -328,7 +328,7 @@ class HighlightRecorder:
             # OBS not open yet; will connect on demand
             pass
 
-    def _on_obs_replay_saved(self, data):
+    def on_replay_buffer_saved(self, data):
         orig_path = getattr(data, "saved_replay_path", None)
         if not orig_path:
             return
@@ -360,13 +360,26 @@ class HighlightRecorder:
         if not base_name.startswith("Hunt_"):
             new_name = f"Hunt_{tag}_{base_name}"
             new_path = os.path.join(dir_name, new_name)
-            time.sleep(0.3)
-            try:
-                os.rename(orig_path, new_path)
+            
+            # Retry loop in case OBS has the file handle temporarily open
+            renamed = False
+            for _ in range(15):
+                time.sleep(0.2)
+                try:
+                    os.rename(orig_path, new_path)
+                    renamed = True
+                    break
+                except PermissionError:
+                    continue
+                except Exception as e:
+                    self.log_callback(f"[Recorder] Rename error: {e}")
+                    break
+
+            if renamed:
                 self.log_callback(f"[Recorder] SUCCESS: Replay saved & renamed to -> {new_name}")
                 return
-            except Exception as e:
-                self.log_callback(f"[Recorder] Replay saved as {base_name} (Rename notice: {e})")
+            else:
+                self.log_callback(f"[Recorder] Replay saved as {base_name} (file busy)")
                 return
 
         self.log_callback(f"[Recorder] SUCCESS: Replay saved: {base_name}")
