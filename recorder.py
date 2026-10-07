@@ -8,14 +8,31 @@ import sys
 import json
 import time
 import threading
+import winreg
 import win32api
 import win32con
 
 VK_MAP = {
+    # Modifiers
     "ctrl": win32con.VK_CONTROL,
     "control": win32con.VK_CONTROL,
     "shift": win32con.VK_SHIFT,
     "alt": win32con.VK_MENU,
+    # Isolated / special keys
+    "scroll_lock": win32con.VK_SCROLL,
+    "scrolllock": win32con.VK_SCROLL,
+    "scroll": win32con.VK_SCROLL,
+    "pause": win32con.VK_PAUSE,
+    "break": win32con.VK_PAUSE,
+    "insert": win32con.VK_INSERT,
+    "delete": win32con.VK_DELETE,
+    "home": win32con.VK_HOME,
+    "end": win32con.VK_END,
+    "pageup": win32con.VK_PRIOR,
+    "pagedown": win32con.VK_NEXT,
+    "printscreen": win32con.VK_SNAPSHOT,
+    "prntscrn": win32con.VK_SNAPSHOT,
+    # Function keys (F1 - F24)
     "f1": win32con.VK_F1,
     "f2": win32con.VK_F2,
     "f3": win32con.VK_F3,
@@ -28,12 +45,35 @@ VK_MAP = {
     "f10": win32con.VK_F10,
     "f11": win32con.VK_F11,
     "f12": win32con.VK_F12,
+    "f13": 0x7C,
+    "f14": 0x7D,
+    "f15": 0x7E,
+    "f16": 0x7F,
+    "f17": 0x80,
+    "f18": 0x81,
+    "f19": 0x82,
+    "f20": 0x83,
+    "f21": 0x84,
+    "f22": 0x85,
+    "f23": 0x86,
+    "f24": 0x87,
+    # Numpad
+    "numpad0": win32con.VK_NUMPAD0,
+    "numpad1": win32con.VK_NUMPAD1,
+    "numpad2": win32con.VK_NUMPAD2,
+    "numpad3": win32con.VK_NUMPAD3,
+    "numpad4": win32con.VK_NUMPAD4,
+    "numpad5": win32con.VK_NUMPAD5,
+    "numpad6": win32con.VK_NUMPAD6,
+    "numpad7": win32con.VK_NUMPAD7,
+    "numpad8": win32con.VK_NUMPAD8,
+    "numpad9": win32con.VK_NUMPAD9,
 }
 
 DEFAULT_CONFIG = {
     "mode": "relive",
     "relive": {
-        "hotkey": ["ctrl", "shift", "s"],
+        "hotkey": "auto",
         "post_event_delay_sec": 7.0,
         "max_coalesce_sec": 60.0
     },
@@ -52,8 +92,30 @@ DEFAULT_CONFIG = {
     "log_to_desktop": False
 }
 
+def get_amd_registered_hotkey():
+    """Reads the current Instant Replay hotkey configured in AMD Adrenalin from Windows Registry."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\AMD\DVR") as key:
+            val, _ = winreg.QueryValueEx(key, "SaveInstantReplayHotkey")
+            if val:
+                parts = []
+                if "," in val:
+                    mods, k = val.split(",", 1)
+                    for m in mods.split("+"):
+                        m_str = m.strip().lower()
+                        if m_str and m_str != "none":
+                            parts.append(m_str)
+                    if k.strip():
+                        parts.append(k.strip().lower())
+                else:
+                    parts.append(val.strip().lower())
+                return parts
+    except Exception:
+        pass
+    return None
+
 def resolve_key(key_str):
-    k = str(key_str).lower().strip()
+    k = str(key_str).lower().strip().replace(" ", "_")
     if k in VK_MAP:
         return VK_MAP[k]
     if len(k) == 1:
@@ -81,6 +143,7 @@ class HighlightRecorder:
         self._timer = None
         self._pending_events = []
         self._batch_start_time = None
+        self.relive_hotkey = ["ctrl", "shift", "s"]
 
         # Optional desktop log path
         user_profile = os.environ.get("USERPROFILE", "C:")
@@ -89,8 +152,21 @@ class HighlightRecorder:
         mode = self.config.get("mode", "relive").lower()
         self.log_callback(f"[Recorder] Mode initialized: '{mode.upper()}'")
         if mode == "relive":
-            hotkey_str = "+".join(self.config["relive"]["hotkey"]).upper()
-            self.log_callback(f"[Recorder] AMD ReLive hotkey: {hotkey_str}")
+            configured_hotkey = self.config.get("relive", {}).get("hotkey", "auto")
+            if configured_hotkey == "auto" or not configured_hotkey:
+                detected = get_amd_registered_hotkey()
+                if detected:
+                    self.relive_hotkey = detected
+                    self.log_callback(f"[Recorder] Auto-detected AMD ReLive hotkey from Windows Registry: {'+'.join(detected).upper()}")
+                else:
+                    self.relive_hotkey = ["ctrl", "shift", "s"]
+            elif isinstance(configured_hotkey, list):
+                self.relive_hotkey = configured_hotkey
+            else:
+                self.relive_hotkey = [str(configured_hotkey)]
+
+            hotkey_str = "+".join(self.relive_hotkey).upper()
+            self.log_callback(f"[Recorder] Active AMD ReLive hotkey: {hotkey_str}")
             self.log_callback(f"[Recorder] Coalescing delay: {self.config['relive']['post_event_delay_sec']}s (max {self.config['relive']['max_coalesce_sec']}s)")
         elif mode == "obs":
             self.log_callback(f"[Recorder] OBS WebSocket target: {self.config['obs']['host']}:{self.config['obs']['port']}")
@@ -209,10 +285,9 @@ class HighlightRecorder:
             self.log_callback(f"[Recorder] Unknown recording mode: '{mode}'")
 
     def _save_relive(self, events):
-        hotkey = self.config.get("relive", {}).get("hotkey", ["ctrl", "shift", "s"])
-        hotkey_str = "+".join(hotkey).upper()
+        hotkey_str = "+".join(self.relive_hotkey).upper()
         try:
-            press_hotkey(hotkey)
+            press_hotkey(self.relive_hotkey)
             self.log_callback(f"[Recorder] SUCCESS: Sent AMD ReLive shortcut ({hotkey_str})! Replay saved.")
         except Exception as e:
             self.log_callback(f"[Recorder] ERROR sending ReLive hotkey: {e}")

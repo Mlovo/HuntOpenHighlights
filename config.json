@@ -1,11 +1,7 @@
 {
     "mode": "relive",
     "relive": {
-        "hotkey": [
-            "ctrl",
-            "shift",
-            "s"
-        ],
+        "hotkey": "auto",
         "post_event_delay_sec": 7.0,
         "max_coalesce_sec": 60.0
     },
