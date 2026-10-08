@@ -78,7 +78,8 @@ void Session::stop() {
 }
 void Session::capture(std::stop_token stop, std::promise<void> ready) {
     bool signaled = false;
-    using namespace winrt::Windows::Graphics;
+    namespace Capture = winrt::Windows::Graphics::Capture;
+    namespace GraphicsDirectX = winrt::Windows::Graphics::DirectX;
     Capture::Direct3D11CaptureFramePool pool{nullptr};
     Capture::GraphicsCaptureSession capture_session{nullptr};
     std::unique_ptr<Apartment> apartment;
@@ -102,14 +103,16 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
         }
         validate(config);
         auto callback = [this](int stream, const AVPacket* packet, AVRational base) { emit(stream, packet, base); };
+        log(0, "Initializing GPU capture: " + utf8(d3d->name) + " / " + std::to_string(config.width)
+            + "x" + std::to_string(config.height) + " / " + std::to_string(config.fps) + " FPS / standalone NV12 textures.");
         video = std::make_unique<VideoEncoder>(*d3d, config, callback);
         description = video->description;
         ComPtr<IDXGIDevice> dxgi; check(d3d->device.As(&dxgi));
         winrt::com_ptr<IInspectable> inspectable;
         check(CreateDirect3D11DeviceFromDXGIDevice(dxgi.Get(), inspectable.put()));
-        auto device = inspectable.as<DirectX::Direct3D11::IDirect3DDevice>();
+        auto device = inspectable.as<GraphicsDirectX::Direct3D11::IDirect3DDevice>();
         pool = Capture::Direct3D11CaptureFramePool::CreateFreeThreaded(device,
-            DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, size);
+            GraphicsDirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, size);
         capture_session = pool.CreateCaptureSession(item);
         capture_session.IsCursorCaptureEnabled(false);
         auto closed = std::make_shared<std::atomic<bool>>(false);
@@ -162,7 +165,7 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
                 }
                 frame.Close();
                 if (actual.Width != size.Width || actual.Height != size.Height) {
-                    size = actual; pool.Recreate(device, DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, size);
+                    size = actual; pool.Recreate(device, GraphicsDirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, size);
                     break;
                 }
             }

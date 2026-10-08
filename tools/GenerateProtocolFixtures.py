@@ -49,3 +49,37 @@ r=sdk.SDKIPCRequest(); r.closeGroupRequest.groupId="match-1896"; envelope("close
 path=ROOT / "tests/HuntReplay.Tests/Fixtures/python-wire.json"
 path.write_text(json.dumps(fixtures, indent=2)+"\n", encoding="utf-8")
 print(path.relative_to(ROOT))
+
+# Synthetic compatibility/regression inputs, not a captured game trace. Use the
+# original proto2 serializer to verify that required string fields may be empty.
+controls = []
+def control(name, message):
+    controls.append({"name": name, "base64": base64.b64encode(message.SerializeToString()).decode("ascii")})
+
+control("join", bus.BusMessage(uniqueid="join", source_system="Hunt1896", source_module="GfeSDK", joined=True))
+ack = bus.BusMessage(uniqueid="", source_system="", source_module="", reference_uniqueid="join")
+ack.status.code = bus.BusMessage.Status.Completed
+control("empty-ack", ack)
+ack.uniqueid = "join"
+control("echo-join-ack", ack)
+r = sdk.SDKIPCRequest(version_major=1, version_minor=0, component=sdk.SDKComponent_SHARE)
+r.createSDKInstanceRequest.client = ""
+r.createSDKInstanceRequest.clientPID = 42
+r.createSDKInstanceRequest.gameName = "Hunt: Showdown 1896"
+m = bus.BusMessage(uniqueid="create", source_system="", source_module="")
+m.generic.type = 1
+m.generic.data = sdk.SDKIPCMessage(request=r).SerializeToString()
+control("create-no-client-label", m)
+m = bus.BusMessage(uniqueid="create", source_system="", source_module="")
+m.generic.type = 2
+m.generic.data = sdk.SDKIPCMessage(response=sdk.SDKIPCResponse(retval=0, retstatus="SUCCESS")).SerializeToString()
+control("sdk-response", m)
+r = sdk.SDKIPCRequest(version_major=1, version_minor=0, component=sdk.SDKComponent_SHARE)
+r.isClientAliveRequest.SetInParent()
+m = bus.BusMessage(uniqueid="alive", source_system="", source_module="")
+m.generic.type = 1
+m.generic.data = sdk.SDKIPCMessage(request=r).SerializeToString()
+control("keepalive", m)
+path = ROOT / "tests/HuntReplay.Tests/Fixtures/python-control-wire.json"
+path.write_text(json.dumps(controls, indent=2)+"\n", encoding="utf-8")
+print(path.relative_to(ROOT))

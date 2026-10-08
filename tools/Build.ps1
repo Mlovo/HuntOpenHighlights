@@ -24,6 +24,10 @@ $Signature = Get-AuthenticodeSignature 'bin/MessageBus.dll'
 if ($Signature.Status -ne 'Valid' -or $Signature.SignerCertificate.Subject -notmatch 'NVIDIA Corporation') {
     throw "MessageBus.dll signature check failed: $($Signature.Status). No unsigned replacement will be embedded."
 }
+if (!$SkipTests) {
+    Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.Tests','--configuration',$Configuration)
+    Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.WindowsTests','--configuration',$Configuration)
+}
 & (Join-Path $PSScriptRoot 'PrepareFFmpeg.ps1') -ArchivePath $FFmpegArchive -Offline:$Offline
 Invoke-Checked 'cmake' @('-S','native','-B','artifacts/native','-G','Visual Studio 17 2022','-A','x64',"-DFFMPEG_ROOT=$Root/native/vendor/ffmpeg")
 Invoke-Checked 'cmake' @('--build','artifacts/native','--config',$Configuration,'--parallel','4')
@@ -37,7 +41,6 @@ $Manifest = Get-ChildItem $Runtime -Filter '*.dll' | Sort-Object Name | ForEach-
 }
 # ASCII without BOM. This manifest and every DLL are embedded resources, not sidecar dependencies.
 $Manifest | Set-Content (Join-Path $Runtime 'native.sha256') -Encoding Ascii
-if (!$SkipTests) { Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.Tests','--configuration',$Configuration) }
 if ($NoPublish) {
     Invoke-Checked 'dotnet' @('build','src/HuntReplay.App','--configuration',$Configuration)
     Write-Host 'Build complete (no portable executable requested).'

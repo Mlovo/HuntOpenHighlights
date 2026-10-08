@@ -9,8 +9,8 @@ Python, горячие клавиши драйверных рекордеров 
 встроенные библиотеки, а не внешнее приложение записи. Сжатые пакеты до сохранения
 находятся в RAM, а не во временных видеофайлах на SSD.
 
-> **Статус: исходный pre-release 0.1.0, не сертифицированный Windows-релиз.**
-> Переносимое C#-ядро и IPC скомпилированы и прошли **66 тестов** в доступной Linux-среде.
+> **Статус: исходный pre-release 0.1.1, не сертифицированный Windows-релиз.**
+> Переносимое C#-ядро и IPC скомпилированы и прошли **83 теста** в доступной Linux-среде.
 > WPF, нативная MSVC-сборка, UAC, WGC/WASAPI, реальные энкодеры и Hunt/EAC здесь
 > не запускались. Для них добавлены Windows CI и [обязательный план проверки](docs/WINDOWS_VALIDATION.md).
 > Готовый проверенный `.exe` в Git не вложен. Инструкция ниже создаёт один
@@ -147,6 +147,9 @@ SDK FFmpeg только на этапе сборки, создаёт MSVC import
 dotnet run --project tests/HuntReplay.Tests -c Release
 python tools/CheckSource.py
 
+# Только Windows: 18 регрессий настоящих WPF ComboBox / TwoWay bindings, без GPU:
+dotnet run --project tests/HuntReplay.WindowsTests -c Release
+
 # На Windows, при УЖЕ запущенном буфере: реальный IPC smoke test двух фрагов через 12 с.
 # Не меняет источник захвата и не нажимает клавиши.
 dotnet run --project tests/HuntReplay.Tests -c Release -- --pipe-smoke --multi
@@ -159,6 +162,7 @@ dotnet run --project tests/HuntReplay.Tests -c Release -- --pipe-smoke --multi
 | `src/HuntReplay.App` | WPF UI, orchestration, IPC, UAC, нативный interop, desktop integration |
 | `native/` | C++20 WGC/D3D11, AMF/NVENC/QSV/x264, WASAPI/AAC, MP4 mux, thumbnails |
 | `tests/HuntReplay.Tests` | исполняемые regression-тесты и live IPC smoke test |
+| `tests/HuntReplay.WindowsTests` | WPF-регрессии выбора устройств / refresh / unplug |
 | `tools/` | зафиксированные зависимости, сборка, статические проверки |
 | `.github/workflows/studio.yml` | .NET 8 regression suite + Windows build/QA artifact |
 

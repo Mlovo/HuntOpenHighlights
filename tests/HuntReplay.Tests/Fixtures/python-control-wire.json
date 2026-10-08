@@ -1,0 +1,26 @@
+[
+  {
+    "name": "join",
+    "base64": "CgRqb2luEghIdW50MTg5NhoGR2ZlU0RLKAE="
+  },
+  {
+    "name": "empty-ack",
+    "base64": "CgASABoAUgRqb2luqgECCAI="
+  },
+  {
+    "name": "echo-join-ack",
+    "base64": "CgRqb2luEgAaAFIEam9pbqoBAggC"
+  },
+  {
+    "name": "create-no-client-label",
+    "base64": "CgZjcmVhdGUSABoAogEoCAESJAoiCAEQACgBmgEZCgAQKiITSHVudDogU2hvd2Rvd24gMTg5Ng=="
+  },
+  {
+    "name": "sdk-response",
+    "base64": "CgZjcmVhdGUSABoAogERCAISDRILCAASB1NVQ0NFU1M="
+  },
+  {
+    "name": "keepalive",
+    "base64": "CgVhbGl2ZRIAGgCiAQ8IARILCgkIARAAKAGqAQA="
+  }
+]

@@ -17,6 +17,11 @@ SHA-256 проверяемого exe. Не называйте сборку produ
 - [ ] 100% / 125% / 150% / 200% DPI; другой монитор; минимальный размер окна;
       настройки/кнопки остаются доступны через scroll.
 - [ ] Нет демонстрационных клипов, фальшивого «GPU активен» или hardcoded RAM.
+- [ ] Apply / повторный refresh сохраняет Default и явные ID монитора, output, mic.
+      Unplug не подменяет выбранное устройство другим: видна unavailable опция;
+      replug возвращает название. `null` из config 0.1.0 восстанавливается как Default.
+- [ ] `dotnet run --project tests/HuntReplay.WindowsTests -c Release` — 18 PASS,
+      без обращения к GPU/микрофону/реестру.
 
 ## 2. UAC, реестр и восстановление (желательно VM snapshot)
 
@@ -40,6 +45,9 @@ SHA-256 проверяемого exe. Не называйте сборку produ
 
 - [ ] Studio занимает `NvMessageBusBroadcast` до запуска игры; JOIN + peer присутствуют
       в live log; `createSDKInstanceRequest` даёт корректное имя игры и scopes.
+- [ ] После JOIN служебный ACK не вызывает disconnect / цикл ответов; в логе
+      появляется `IPC SDK · CreateSDKInstanceRequest`, затем `SDK авторизован`.
+      Повторное подключение проходит ту же последовательность.
 - [ ] Игра регистрирует `HUNTER_KILLED`, `PLAYER_DOWNED`, открывает/закрывает match group.
 - [ ] Старый Python / NVIDIA server уже держит pipe: понятный статус конфликта,
       никакого убийства чужого процесса или ложного «IPC online».
@@ -85,6 +93,9 @@ not support` допустимо; не выдавайте unsupported за PASS.
 - [ ] Автоопределение выбирает GPU **монитора**, включая ноутбук iGPU+dGPU.
 - [ ] Диагностика действительно выдаёт encoded GPU packets и открывает WASAPI/AAC;
       unsupported codec показывает ошибку, не скрытый CPU fallback.
+- [ ] В 0.1.1 старт использует отдельные NV12 GPU textures, без ошибки создания
+      12-slice render-target array (`80070057`). Проверить также Native размеры
+      и QSV 32-pixel alignment; успешный H.264 probe не подтверждает HEVC/AV1.
 - [ ] MP4 начинается с декодируемого ключевого кадра, корректны SPS/extradata,
       color range, aspect ratio; нет зелёных кадров, stale/reused GPU surfaces.
 - [ ] Реальное source size / selected output / частота кадров совпадают с UI.
@@ -167,6 +178,9 @@ not support` допустимо; не выдавайте unsupported за PASS.
 |---|---|
 | IPC offline | Старый `server.py`, NVIDIA App/Container, другой пользователь; restart Studio после освобождения pipe |
 | Hunt виден, но SDK не подключён | Установка DLL/registry, включённые Highlights в игре, restart игры после установки, совпадение user session |
+| `Не указан монитор` / `Не указаны аудиоустройства` после Apply (0.1.0) | Обновить до 0.1.1: ID больше не стираются при refresh. Config/клипы удалять не нужно; старые null IDs читаются как Default |
+| `GPU NV12 frame pool ... Could not create the texture (80070057)` (0.1.0) | Полностью пересобрать `tools/Build.ps1`, включая native DLL: в 0.1.1 отдельные текстуры вместо NV12 массива. Если ошибка остаётся — новый полный текст, GPU/driver, разрешение и capture mode; CPU автоматически не включается |
+| `Invalid IPC identifier` сразу после JOIN (0.1.0) | 0.1.1 отличает ACK от SDK request, допускает пустой descriptive client, использует JOIN routing. Если disconnect остаётся — сохранить новое сообщение с точным полем/типом; удалять регистрацию NVIDIA не нужно |
 | Unknown/unsupported encoder | Фактический GPU дисплея, современный driver, поддержка выбранного codec; explicit x264 только по выбору пользователя |
 | Нет WGC кадров | Окно восстановлено, borderless вместо проблемного exclusive mode, интерактивная Windows session, нет protected capture |
 | WASAPI denied / no device | Default playback device, подключение USB/BT, Windows microphone privacy, settings IDs старого устройства |

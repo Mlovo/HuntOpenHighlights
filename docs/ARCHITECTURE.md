@@ -52,6 +52,11 @@
 - **App / net8.0-windows10.0.19041.0 / x64:** WPF, desktop integration и orchestration.
   Все пользовательские параметры редактируются в отдельной копии, затем проходят
   валидацию, атомарное сохранение и перезапуск capture session.
+  Device selectors отличают пустой ID (явно выбранный Windows Default) от
+  временного `SelectedValue=null` при обновлении WPF ItemsSource. Последний
+  игнорируется; отключённый явно выбранный ID остаётся отдельной unavailable
+  опцией и не заменяется другим устройством. Старые JSON-null IDs читаются как
+  Default, без сброса остальных настроек.
 
 ### Native / C++20 DLL
 
@@ -83,7 +88,12 @@ Callback-пакет действителен только до возврата 
    BGRA → NV12 BT.709 limited range. Это SDR pipeline, **не HDR tone mapper**.
 6. FFmpeg D3D11 hwdevice/hwframes используют тот же D3D11 device. NVENC/AMF получают
    D3D11 surfaces; QSV — derived device/frames и hardware map. Для QSV pool
-   выровнен, output canvas остаётся пользовательского размера.
+   выровнен, output canvas остаётся пользовательского размера. Пул динамический
+   (`initial_pool_size=0`): повторно используемые отдельные NV12 render-target
+   текстуры с `ArraySize=1`, не один многослойный массив. В pinned FFmpeg 8.1
+   положительный `initial_pool_size` создаёт именно массив, что может приводить
+   к `CreateTexture2D / E_INVALIDARG`. Первая аллокация проверяется до старта capture;
+   ошибка содержит GPU, размер, формат и подробности FFmpeg/драйвера.
 7. `h264/hevc/av1_{amf,nvenc,qsv}`; при явном CPU выборе — `libx264` с readback.
    Global headers, no B frames, closed GOP, periodic I/IDR requests. Начало
    экспортируемого диапазона дополнительно проверяется по реальному key flag,

@@ -10,7 +10,7 @@ using HuntReplay.Protocol.Generated;
 
 namespace HuntReplay.Tests;
 
-public static class Program
+public static partial class Program
 {
     private static int passed, failed;
     public static async Task<int> Main(string[] args)
@@ -110,6 +110,7 @@ public static class Program
             File.WriteAllText(c.SidecarPath, JsonSerializer.Serialize(c.Metadata with { DurationSeconds = -1 }));
             Equal(0,l.List().Count); True(File.Exists(c.FullPath));
         }));
+        RuntimeRegressionTests();
         Console.WriteLine($"\n{passed} passed; {failed} failed.");
         return failed == 0 ? 0 : 1;
     }
@@ -128,10 +129,10 @@ public static class Program
     private static HighlightsSession Session(Func<HighlightEvent,bool>? sink=null)=>new(42,()=>100_000_000,_=>true,sink??(_=>true),_=>{});
     private static HighlightsSession Authorized() {var s=Session();s.Process(Join());s.Process(Request("create",new(){CreateSDKInstanceRequest=new(){Client="Hunt",ClientPID=42}}));return s;}
     private static SDKIPCResponse Response(IReadOnlyList<BusMessage> replies)=>SDKIPCMessage.Parser.ParseFrom(replies[0].Generic.Data).Response;
-    private static BusMessage[] Fixtures()
+    private static BusMessage[] Fixtures(string fileName = "python-wire.json")
     {
-        var path=Path.Combine(AppContext.BaseDirectory,"Fixtures","python-wire.json");
-        if(!File.Exists(path))path=Path.Combine(Directory.GetCurrentDirectory(),"tests","HuntReplay.Tests","Fixtures","python-wire.json");
+        var path=Path.Combine(AppContext.BaseDirectory,"Fixtures",fileName);
+        if(!File.Exists(path))path=Path.Combine(Directory.GetCurrentDirectory(),"tests","HuntReplay.Tests","Fixtures",fileName);
         using var json=JsonDocument.Parse(File.ReadAllText(path));
         return json.RootElement.EnumerateArray().Select(e=>BusMessage.Parser.ParseFrom(Convert.FromBase64String(e.GetProperty("base64").GetString()!))).ToArray();
     }

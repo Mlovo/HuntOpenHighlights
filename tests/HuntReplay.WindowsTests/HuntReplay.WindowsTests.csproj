@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/HuntReplay.Core/HuntReplay.Core.csproj" />
+    <!-- Exercise the actual production selector with WPF bindings, without loading the
+         recorder, NVIDIA shim, GPU backend, registry or the application's startup logic. -->
+    <Compile Include="../../src/HuntReplay.App/Interop/DeviceOption.cs" Link="Production/DeviceOption.cs" />
+    <Compile Include="../../src/HuntReplay.App/ViewModels/ObservableObject.cs" Link="Production/ObservableObject.cs" />
+    <Compile Include="../../src/HuntReplay.App/ViewModels/DeviceSelectionViewModel.cs" Link="Production/DeviceSelectionViewModel.cs" />
+  </ItemGroup>
+</Project>

@@ -20,6 +20,7 @@ public sealed class HighlightsSession
     private readonly HashSet<string> closedGroups = new(StringComparer.Ordinal);
     private bool joined;
     private bool authorized;
+    private string joinedSystem = "", joinedModule = "";
     public string SessionId { get; } = Guid.NewGuid().ToString("N");
     public string? GameName { get; private set; }
     public event Action<string?>? GameChanged;
@@ -36,14 +37,31 @@ public sealed class HighlightsSession
 
     public IReadOnlyList<BusMessage> Process(BusMessage bus)
     {
-        CheckText(bus.Uniqueid, 128);
-        CheckText(bus.SourceSystem, 256);
-        CheckText(bus.SourceModule, 256);
+        // Bus-level ACKs/presence/leave frames are not SDK calls. Their protobuf
+        // strings may be empty, and IDs need not identify new SDK requests. The
+        // original server ignored them: don't disconnect, cache or ACK an ACK.
+        if (bus.EncryptedBusMessage is not null || bus.Encryptionsetup is not null)
+            throw new InvalidDataException("Encrypted NVIDIA IPC is not supported by this video protocol implementation.");
+        SDKIPCRequest? request = null;
+        if (!bus.Joined)
+        {
+            if (bus.Generic is not { Data.Length: > 0 } generic) return [];
+            var message = SDKIPCMessage.Parser.ParseFrom(generic.Data);
+            if (message.MessageCase != SDKIPCMessage.MessageOneofCase.Request) return [];
+            if (!joined) throw new InvalidDataException("SDK request before bus JOIN.");
+            request = message.Request;
+        }
+        string kind = bus.Joined ? "JOIN" : "SDK/" + request!.RequestCase;
+        CheckText(bus.Uniqueid, 128, $"BusMessage.uniqueid ({kind})");
+        // Routing identity can be omitted on subsequent messages on an already joined pipe.
+        CheckText(bus.SourceSystem, 256, $"BusMessage.source_system ({kind})", allowEmpty: !bus.Joined);
+        CheckText(bus.SourceModule, 256, $"BusMessage.source_module ({kind})", allowEmpty: !bus.Joined);
         if (responses.TryGetValue(bus.Uniqueid, out var cached)) return cached;
         var replies = new List<BusMessage>();
         if (bus.Joined)
         {
             joined = true;
+            joinedSystem = bus.SourceSystem; joinedModule = bus.SourceModule;
             var reply = ReplyEnvelope(bus, "MessageBusBroadcast", "Broadcaster");
             reply.BusPeer.Add(new BusMessage.Types.Peer { System = "NvNode", Module = "SDKAPI" });
             replies.Add(reply);
@@ -53,14 +71,19 @@ public sealed class HighlightsSession
             });
             log($"IPC JOIN · {Clean(bus.SourceSystem)}:{Clean(bus.SourceModule)} · PID {clientPid}");
         }
-        else if (bus.Generic is { Data.Length: > 0 } generic)
+        else if (request is not null)
         {
-            if (!joined) throw new InvalidDataException("SDK request before bus JOIN.");
-            var message = SDKIPCMessage.Parser.ParseFrom(generic.Data);
-            if (message.MessageCase != SDKIPCMessage.MessageOneofCase.Request) return [];
-            var request = message.Request;
+            if (request.RequestCase != SDKIPCRequest.RequestOneofCase.IsClientAliveRequest)
+                log($"IPC SDK · {request.RequestCase} · PID {clientPid}");
             currentRequestId = bus.Uniqueid;
-            var response = Handle(request);
+            SDKIPCResponse response;
+            try { response = Handle(request); }
+            catch (InvalidDataException ex)
+            {
+                // The SDK call is correlatable: reject it without tearing down a healthy pipe.
+                response = Failure(ex.Message);
+            }
+            if (response.Retval != 0) log($"IPC отказ · {request.RequestCase} · {response.Retstatus}");
             var envelope = ReplyEnvelope(bus, "NvNode", "SDKAPI");
             envelope.Generic = new BusMessage.Types.Generic
             {
@@ -86,8 +109,6 @@ public sealed class HighlightsSession
                 replies.Add(notice);
             }
         }
-        else if (bus.EncryptedBusMessage is not null || bus.Encryptionsetup is not null)
-            throw new InvalidDataException("Encrypted NVIDIA IPC is not supported by this video protocol implementation.");
         var result = replies.ToArray();
         responses[bus.Uniqueid] = result;
         responseOrder.Enqueue(bus.Uniqueid);
@@ -108,7 +129,9 @@ public sealed class HighlightsSession
             case SDKIPCRequest.RequestOneofCase.CreateSDKInstanceRequest:
                 var create = request.CreateSDKInstanceRequest;
                 if (create.ClientPID != clientPid) return Failure("CLIENT_PID_MISMATCH");
-                CheckText(create.Client, 256);
+                // client is descriptive text, not authentication. A required proto2 string
+                // can validly be empty; authorization still requires the actual pipe-client PID.
+                CheckText(create.Client, 256, "createSDKInstanceRequest.client", allowEmpty: true);
                 var instance = new CreateSDKInstanceResponse
                 {
                     InstalledGfeVersion = "3.28.0.412", InstalledGfeSDKIPCVersionMajor = 1, InstalledGfeSDKIPCVersionMinor = 0
@@ -126,13 +149,16 @@ public sealed class HighlightsSession
             case SDKIPCRequest.RequestOneofCase.ConfigureHighlightsRequest:
                 var highlights = request.ConfigureHighlightsRequest.HighlightTable;
                 if (highlights.Count > 256) return Failure("TOO_MANY_DEFINITIONS");
+                // Validate before replacing live state; a rejected request must not
+                // leave half a configuration on the now-still-connected session.
+                foreach (var item in highlights) CheckText(item.HighlightId, 128, "configureHighlightsRequest.highlightId");
                 definitions.Clear();
-                foreach (var item in highlights) { CheckText(item.HighlightId, 128); definitions.Add(item.HighlightId); }
+                foreach (var item in highlights) definitions.Add(item.HighlightId);
                 log($"Зарегистрированы события · {string.Join(", ", definitions.Select(Clean))}");
                 break;
             case SDKIPCRequest.RequestOneofCase.OpenGroupRequest:
                 var group = request.OpenGroupRequest.GroupId;
-                CheckText(group, 256);
+                CheckText(group, 256, "openGroupRequest.groupId");
                 if (groups.Count >= 128 && !groups.ContainsKey(group)) return Failure("TOO_MANY_GROUPS");
                 if (!groups.ContainsKey(group) || closedGroups.Remove(group))
                 {
@@ -145,6 +171,8 @@ public sealed class HighlightsSession
                 // Do not cancel post-roll and do not delete real files on destroyHighlights.
                 // The SDK owns virtual groups; the user's library owns saved clips.
                 var close = request.CloseGroupRequest;
+                CheckText(close.GroupId, 256, "closeGroupRequest.groupId");
+                if (!groups.ContainsKey(close.GroupId)) return Failure("GROUP_NOT_FOUND");
                 closedGroups.Add(close.GroupId);
                 if (close.DestroyHighlights)
                 {
@@ -154,8 +182,8 @@ public sealed class HighlightsSession
                 break;
             case SDKIPCRequest.RequestOneofCase.SetVideoHighlightRequest:
                 var video = request.SetVideoHighlightRequest;
-                CheckText(video.HighlightId, 128);
-                CheckText(video.GroupId, 256);
+                CheckText(video.HighlightId, 128, "setVideoHighlightRequest.highlightId");
+                CheckText(video.GroupId, 256, "setVideoHighlightRequest.groupId");
                 if (!groups.ContainsKey(video.GroupId)) return Failure("GROUP_NOT_FOUND");
                 if (!definitions.Contains(video.HighlightId)) return Failure("HIGHLIGHT_NOT_CONFIGURED");
                 if (!enabled(video.HighlightId)) break; // A user-disabled event is a valid no-op.
@@ -178,6 +206,7 @@ public sealed class HighlightsSession
                 response.IsClientAliveResponse = new IsClientAliveResponse { Alive = true };
                 break;
             case SDKIPCRequest.RequestOneofCase.GetNumberOfHighlightsInGroupRequest:
+                CheckText(request.GetNumberOfHighlightsInGroupRequest.GroupId, 256, "getNumberOfHighlightsInGroupRequest.groupId");
                 response.GetNumberOfHighlightsInGroupResponse = new GetNumberOfHighlightsInGroupResponse
                 {
                     NumberOfHighlights = groups.GetValueOrDefault(request.GetNumberOfHighlightsInGroupRequest.GroupId)
@@ -213,16 +242,21 @@ public sealed class HighlightsSession
         {
             Uniqueid = Guid.NewGuid().ToString(), ReferenceUniqueid = source.Uniqueid,
             SourceSystem = system, SourceModule = module,
-            TargetSystem = source.SourceSystem, TargetModule = source.SourceModule,
+            TargetSystem = string.IsNullOrEmpty(source.SourceSystem) ? joinedSystem : source.SourceSystem,
+            TargetModule = string.IsNullOrEmpty(source.SourceModule) ? joinedModule : source.SourceModule,
             Status = new BusMessage.Types.Status { Code = BusMessage.Types.Status.Types.Code.Completed }
         };
     }
 
     private static SDKIPCResponse Failure(string status) => new() { Retval = -1, Retstatus = status };
-    private static void CheckText(string value, int limit)
+    private static void CheckText(string value, int limit, string field, bool allowEmpty = false)
     {
-        if (string.IsNullOrEmpty(value) || value.Length > limit || value.Any(char.IsControl))
-            throw new InvalidDataException("Invalid IPC identifier.");
+        if (!allowEmpty && string.IsNullOrEmpty(value))
+            throw new InvalidDataException($"Invalid IPC identifier: {field} is empty.");
+        if (value.Length > limit)
+            throw new InvalidDataException($"Invalid IPC identifier: {field} length {value.Length} exceeds {limit}.");
+        if (value.Any(char.IsControl))
+            throw new InvalidDataException($"Invalid IPC identifier: {field} contains control characters (length {value.Length}).");
     }
     private static string Clean(string value) => new(value.Where(c => !char.IsControl(c)).Take(256).ToArray());
 }

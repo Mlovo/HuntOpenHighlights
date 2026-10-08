@@ -66,10 +66,30 @@ VideoEncoder::VideoEncoder(D3D& device, hr_config config, Emit callback) : d3d(d
     fc->format = AV_PIX_FMT_D3D11; fc->sw_format = AV_PIX_FMT_NV12;
     fc->width = encoder == 3 ? (config.width + 31) & ~31 : config.width;
     fc->height = encoder == 3 ? (config.height + 31) & ~31 : config.height;
-    fc->initial_pool_size = 12;
+    // FFmpeg 8.1 uses initial_pool_size > 0 as one Texture2D array, even with
+    // RENDER_TARGET. NV12 render-target arrays can fail CreateTexture2D(E_INVALIDARG).
+    // A dynamic pool reuses independent ArraySize=1 GPU textures; QSV derivation
+    // supports this too. This is NOT a CPU/readback fallback.
+    fc->initial_pool_size = 0;
     auto* dxframes = reinterpret_cast<AVD3D11VAFramesContext*>(fc->hwctx);
     dxframes->BindFlags = D3D11_BIND_RENDER_TARGET;
-    avcheck(av_hwframe_ctx_init(frames.get()), "GPU NV12 frame pool");
+    const std::string surface_info = std::to_string(fc->width) + "x" + std::to_string(fc->height)
+        + ", NV12, ArraySize=1, RENDER_TARGET, adapter=" + utf8(d3d.name) + ", encoder=" + name;
+    ffmpeg_detail.clear();
+    avcheck(av_hwframe_ctx_init(frames.get()), ("GPU dynamic frame pool (" + surface_info + ")").c_str());
+    {
+        // A dynamic pool allocates lazily. Probe it now so allocation failures are
+        // reported at startup with dimensions/adapter/FFmpeg's underlying HRESULT,
+        // not asynchronously after the UI has announced that capture is running.
+        auto probe = make_frame();
+        avcheck(av_hwframe_get_buffer(frames.get(), probe.get(), 0),
+            ("GPU NV12 texture allocation (" + surface_info + ")").c_str());
+        D3D11_TEXTURE2D_DESC actual{};
+        reinterpret_cast<ID3D11Texture2D*>(probe->data[0])->GetDesc(&actual);
+        if (actual.ArraySize != 1 || actual.Format != DXGI_FORMAT_NV12)
+            throw std::runtime_error("Unexpected FFmpeg GPU surface layout (" + surface_info + ").");
+    }
+
     codec.reset(avcodec_alloc_context3(implementation));
     if (!codec) throw std::bad_alloc();
     codec->width = config.width; codec->height = config.height;

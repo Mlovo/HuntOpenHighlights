@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -67,7 +68,10 @@ public sealed class VideoSettings
 {
     public CaptureSource Source { get; set; } = CaptureSource.HuntWindow;
     // Persist the Windows display device name, never a transient HMONITOR.
-    public string MonitorDevice { get; set; } = "";
+    private string monitorDevice = "";
+    // Old UI versions could serialize null during ComboBox refresh. Recover as Windows default.
+    [AllowNull]
+    public string MonitorDevice { get => monitorDevice; set => monitorDevice = value ?? ""; }
     public VideoResolution Resolution { get; set; } = VideoResolution.Native;
     public int Fps { get; set; } = 60;
     public VideoEncoder Encoder { get; set; } = VideoEncoder.Auto;
@@ -78,9 +82,12 @@ public sealed class VideoSettings
 
 public sealed class AudioSettings
 {
-    public string OutputDeviceId { get; set; } = "";
+    private string outputDeviceId = "", microphoneDeviceId = "";
+    [AllowNull]
+    public string OutputDeviceId { get => outputDeviceId; set => outputDeviceId = value ?? ""; }
     public bool MicrophoneEnabled { get; set; }
-    public string MicrophoneDeviceId { get; set; } = "";
+    [AllowNull]
+    public string MicrophoneDeviceId { get => microphoneDeviceId; set => microphoneDeviceId = value ?? ""; }
     public int MicrophoneVolume { get; set; } = 80;
     public AudioMode Mode { get; set; } = AudioMode.Mix;
 }

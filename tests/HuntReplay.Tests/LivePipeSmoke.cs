@@ -22,6 +22,11 @@ internal static class LivePipeSmoke
             var ack = await BusFraming.ReadAsync(pipe, stop.Token);
             var presence = await BusFraming.ReadAsync(pipe, stop.Token);
             if (ack?.ReferenceUniqueid != join.Uniqueid || presence?.Joined != true) throw new IOException("JOIN handshake failed.");
+            await BusFraming.WriteAsync(pipe, new BusMessage
+            {
+                Uniqueid = "", SourceSystem = "", SourceModule = "", ReferenceUniqueid = ack.Uniqueid,
+                Status = new() { Code = BusMessage.Types.Status.Types.Code.Completed }
+            }, stop.Token); // No reply is expected for a service ACK.
             await Send(new() { CreateSDKInstanceRequest = new() { Client = "HuntReplay smoke test", ClientPID = (ulong)Environment.ProcessId, GameName = "HuntReplay diagnostic client" } });
             var config = new ConfigureHighlightsRequest();
             config.HighlightTable.Add(new ConfigureHighlightsRequest.Types.HighlightDefinition { HighlightId = "HUNTER_KILLED" });

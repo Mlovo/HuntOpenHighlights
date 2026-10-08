@@ -37,9 +37,9 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private string search = "";
     private ClipViewModel? selectedClip;
     public IReadOnlyList<DeviceOption> Devices { get; private set; } = [];
-    public ObservableCollection<DeviceOption> Monitors { get; } = [];
-    public ObservableCollection<DeviceOption> OutputDevices { get; } = [];
-    public ObservableCollection<DeviceOption> Microphones { get; } = [];
+    public DeviceSelectionViewModel MonitorSelection { get; }
+    public DeviceSelectionViewModel OutputSelection { get; }
+    public DeviceSelectionViewModel MicrophoneSelection { get; }
     public ObservableCollection<LogEntry> Events { get; } = [];
     public ObservableCollection<ClipViewModel> Clips { get; } = [];
     public ICollectionView FilteredClips { get; }
@@ -51,7 +51,11 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string Message { get => message; private set => Set(ref message, value); }
     public string Diagnostics { get => diagnostics; private set => Set(ref diagnostics, value); }
     public bool Busy { get => busy; private set { if (Set(ref busy, value)) CommandManager.InvalidateRequerySuggested(); } }
-    public StudioSettings SettingsEdit { get => settingsEdit; private set => Set(ref settingsEdit, value); }
+    public StudioSettings SettingsEdit
+    {
+        get => settingsEdit;
+        private set { if (Set(ref settingsEdit, value)) RefreshDeviceSelections(); }
+    }
     public string Search { get => search; set { if (Set(ref search, value)) FilteredClips.Refresh(); } }
     public ClipViewModel? SelectedClip
     {
@@ -116,6 +120,12 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         dispatcher = Dispatcher.CurrentDispatcher;
         this.store = store; this.recorder = recorder; this.pipe = pipe; this.log = log; this.portable = portable;
         settingsEdit = recorder.Settings.Clone();
+        MonitorSelection = new(0, "Основной монитор · автоматически",
+            () => SettingsEdit.Video.MonitorDevice, value => SettingsEdit.Video.MonitorDevice = value);
+        OutputSelection = new(1, "Устройство вывода Windows по умолчанию",
+            () => SettingsEdit.Audio.OutputDeviceId, value => SettingsEdit.Audio.OutputDeviceId = value);
+        MicrophoneSelection = new(2, "Микрофон Windows по умолчанию",
+            () => SettingsEdit.Audio.MicrophoneDeviceId, value => SettingsEdit.Audio.MicrophoneDeviceId = value);
         FilteredClips = CollectionViewSource.GetDefaultView(Clips);
         FilteredClips.Filter = value => value is ClipViewModel c &&
             (string.IsNullOrWhiteSpace(Search) || c.FileName.Contains(Search, StringComparison.OrdinalIgnoreCase) || c.EventLabel.Contains(Search, StringComparison.OrdinalIgnoreCase));
@@ -161,17 +171,15 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     {
         try { Devices = await Task.Run(NativeCaptureEngine.EnumerateDevices); }
         catch (Exception ex) { Error(ex); Devices = []; }
-        Monitors.Clear(); OutputDevices.Clear(); Microphones.Clear();
-        Monitors.Add(new(0, "", "Основной монитор · автоматически"));
-        OutputDevices.Add(new(1, "", "Устройство вывода Windows по умолчанию"));
-        Microphones.Add(new(2, "", "Микрофон Windows по умолчанию"));
-        foreach (var device in Devices)
-        {
-            if (device.Kind == 0) Monitors.Add(device);
-            else if (device.Kind == 1) OutputDevices.Add(device);
-            else if (device.Kind == 2) Microphones.Add(device);
-        }
+        RefreshDeviceSelections();
         Notify(nameof(GpuStatus));
+    }
+
+    private void RefreshDeviceSelections()
+    {
+        MonitorSelection.Refresh(Devices);
+        OutputSelection.Refresh(Devices);
+        MicrophoneSelection.Refresh(Devices);
     }
 
     private async Task ToggleAsync()
@@ -270,7 +278,9 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             await RefreshClipsAsync();
             Message = "Настройки сохранены в config.json.";
             if (wasRunning) await StartCurrentAsync();
-            log.Write("Настройки применены. Для нового формата начата новая сессия буфера.");
+            log.Write(wasRunning
+                ? "Настройки применены. Буфер перезапущен с новым форматом."
+                : "Настройки применены. Буфер не запущен; ожидание игры или ручного запуска.");
         }
         catch
         {

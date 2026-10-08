@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.App", "src\HuntR
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.Tests", "tests\HuntReplay.Tests\HuntReplay.Tests.csproj", "{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.WindowsTests", "tests\HuntReplay.WindowsTests\HuntReplay.WindowsTests.csproj", "{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -32,5 +34,9 @@ Global
 		{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}.Debug|x64.Build.0 = Debug|Any CPU
 		{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}.Release|x64.ActiveCfg = Release|Any CPU
 		{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}.Release|x64.Build.0 = Release|Any CPU
+		{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}.Debug|x64.Build.0 = Debug|Any CPU
+		{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}.Release|x64.ActiveCfg = Release|Any CPU
+		{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

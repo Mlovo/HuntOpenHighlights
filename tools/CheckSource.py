@@ -46,6 +46,11 @@ require(exports <= managed, "Missing managed ABI imports: " + str(exports - mana
 # Python-generated golden wire messages remain deterministic and present.
 fixtures = json.loads((ROOT / "tests/HuntReplay.Tests/Fixtures/python-wire.json").read_text())
 require([f["name"] for f in fixtures] == ["join", "create", "configure", "open", "kill", "config", "count", "close"], "Unexpected protocol fixtures")
+controls = json.loads((ROOT / "tests/HuntReplay.Tests/Fixtures/python-control-wire.json").read_text())
+require([f["name"] for f in controls] == ["join", "empty-ack", "echo-join-ack", "create-no-client-label", "sdk-response", "keepalive"], "Unexpected control-frame fixtures")
+# Pin the allocation policy which is incompatible with NV12 render-target arrays in FFmpeg 8.1.
+video = (ROOT / "native/src/video.cpp").read_text()
+require(re.search(r"fc->initial_pool_size\s*=\s*0\s*;", video), "NV12 capture must use standalone dynamic-pool GPU textures")
 if errors:
     raise SystemExit("\n".join(errors))
 print(f"PASS: XML, pinned payloads, {len(production)} production source files, {len(exports)} ABI exports, golden fixtures.")
