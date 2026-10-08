@@ -1,0 +1,36 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.Core", "src\HuntReplay.Core\HuntReplay.Core.csproj", "{B20C6ACE-1083-5A99-A144-5838E20A92EC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.Protocol", "src\HuntReplay.Protocol\HuntReplay.Protocol.csproj", "{D15E7205-EA9B-55ED-B9ED-2EC2A63AA871}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.App", "src\HuntReplay.App\HuntReplay.App.csproj", "{89813C4C-BF67-5C28-BAD7-08B6C7650D35}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.Tests", "tests\HuntReplay.Tests\HuntReplay.Tests.csproj", "{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B20C6ACE-1083-5A99-A144-5838E20A92EC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B20C6ACE-1083-5A99-A144-5838E20A92EC}.Debug|x64.Build.0 = Debug|Any CPU
+		{B20C6ACE-1083-5A99-A144-5838E20A92EC}.Release|x64.ActiveCfg = Release|Any CPU
+		{B20C6ACE-1083-5A99-A144-5838E20A92EC}.Release|x64.Build.0 = Release|Any CPU
+		{D15E7205-EA9B-55ED-B9ED-2EC2A63AA871}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D15E7205-EA9B-55ED-B9ED-2EC2A63AA871}.Debug|x64.Build.0 = Debug|Any CPU
+		{D15E7205-EA9B-55ED-B9ED-2EC2A63AA871}.Release|x64.ActiveCfg = Release|Any CPU
+		{D15E7205-EA9B-55ED-B9ED-2EC2A63AA871}.Release|x64.Build.0 = Release|Any CPU
+		{89813C4C-BF67-5C28-BAD7-08B6C7650D35}.Debug|x64.ActiveCfg = Debug|x64
+		{89813C4C-BF67-5C28-BAD7-08B6C7650D35}.Debug|x64.Build.0 = Debug|x64
+		{89813C4C-BF67-5C28-BAD7-08B6C7650D35}.Release|x64.ActiveCfg = Release|x64
+		{89813C4C-BF67-5C28-BAD7-08B6C7650D35}.Release|x64.Build.0 = Release|x64
+		{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}.Debug|x64.Build.0 = Debug|Any CPU
+		{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}.Release|x64.ActiveCfg = Release|Any CPU
+		{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}.Release|x64.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
