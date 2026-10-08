@@ -23,14 +23,16 @@ powershell -ExecutionPolicy Bypass -File .\tools\Build.ps1
 
 1. SHA-256 и `Get-AuthenticodeSignature` оригинальной `bin/MessageBus.dll`.
    Несоответствие не обходится флагом «ignore signature».
-2. `tools/PrepareFFmpeg.ps1`: URL и SHA-256 из `tools/ffmpeg.lock.json`, проверка
+2. `dotnet run --project tests/HuntReplay.Tests -c Release` и
+   `dotnet run --project tests/HuntReplay.WindowsTests -c Release` — Core/IPC и
+   настоящие WPF binding-регрессии. GPU, игра, микрофон и изменение реестра не нужны.
+3. `tools/PrepareFFmpeg.ps1`: URL и SHA-256 из `tools/ffmpeg.lock.json`, проверка
    архива до распаковки. MinGW shared DLLs используются как DLLs, а MSVC `.lib`
    создаются из export tables через `dumpbin.exe` / `lib.exe` из Visual Studio.
-3. CMake C++20 / x64 / static MSVC CRT (`/MT`). WGC, D3D11 и WASAPI — системные
+4. CMake C++20 / x64 / static MSVC CRT (`/MT`). WGC, D3D11 и WASAPI — системные
    Windows API; установленный GPU-драйвер предоставляет аппаратный runtime.
-4. В `artifacts/runtime/` копируются DLL FFmpeg и `HuntReplay.Media.dll`.
+5. В `artifacts/runtime/` копируются DLL FFmpeg и `HuntReplay.Media.dll`.
    `.exe` FFmpeg/ffprobe туда не копируются. Создаётся `native.sha256`.
-5. `dotnet run --project tests/HuntReplay.Tests -c Release` — regressions.
 6. `dotnet publish`: self-contained WPF .NET 8, win-x64, single file, compression,
    без trimming. Native payload и signed MessageBus находятся в ресурсах.
 7. В output добавляются инструкции, лицензии и checksum exe. Эти текстовые
@@ -58,6 +60,9 @@ restore всё ещё требует источника пакетов. Не о�
 ```powershell
 # Core / IPC — без Windows SDK и без GPU:
 dotnet run --project tests/HuntReplay.Tests -c Release
+
+# WPF selectors: только Windows, но без GPU / NVIDIA runtime:
+dotnet run --project tests/HuntReplay.WindowsTests -c Release
 
 # Нативные библиотеки + managed debug build, без single-file publish:
 .\tools\Build.ps1 -Configuration Debug -NoPublish
@@ -89,9 +94,11 @@ embedded resources должны обновиться вместе. Не копи
 - Windows 2022 + .NET 8 + MSVC: полный native/WPF build, тесты и artifact
   `HuntReplayStudio-win-x64-unsigned-QA` (хранится 7 дней).
 
-Workflow запускается при push/PR либо вручную. В данной рабочей среде он **не был
-запущен**: наличие YAML не означает зелёные checks. Hosted runner не подтверждает
-реальное аппаратное кодирование, интерактивный WGC или совместимость с EAC.
+Workflow запускается при push/PR либо вручную. Для 0.1.1
+[run 37856493230](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37856493230)
+прошёл оба job и опубликовал QA artifact. Точные границы проверки — в `VALIDATION.md`.
+Hosted runner не подтверждает реальное аппаратное кодирование, интерактивный
+WGC или совместимость с EAC.
 
 ## Подпись и лицензии перед релизом
 

@@ -2,9 +2,10 @@
 
 Дата: **2026-10-09**. Рабочая среда: Linux x86-64, без Windows, Visual Studio,
 Windows SDK, интерактивного Windows рабочего стола или физического GPU для WGC.
-Готового `.exe` и успешного Windows build result эта запись не утверждает.
+Windows-сборка и WPF-тесты выполнены отдельно в GitHub Actions (см. ниже).
+Это не испытание аппаратной записи или настоящей игры.
 
-## Выполнено
+## Выполнено локально
 
 1. Изучены исходные `server.py`, `recorder.py`, `install.bat`, обе proto2-схемы;
    оригинальная NVIDIA DLL сохранена без изменений, SHA-256 совпадает с pin.
@@ -45,13 +46,30 @@ Windows SDK, интерактивного Windows рабочего стола и
 
 ## Windows CI и регрессии 0.1.1
 
+**PASS — commit `9581710`, [run 37856493230](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37856493230).**
+
+- Linux / .NET 8: **83 passed, 0 failed** и static checks.
+- Windows 2022 / .NET 8: **83 Core/Protocol + 18 WPF binding tests passed**;
+  полный MSVC C++20/C++/WinRT build, FFmpeg import libs, C#/XAML compilation,
+  single-file self-contained publish и upload artifact завершились успешно.
+- [Unsigned QA artifact](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37856493230/artifacts/11583784089):
+  `HuntReplayStudio-win-x64-unsigned-QA`, версия **0.1.1**. Это результат сборки,
+  не проверка запуска/записи на пользовательском ПК. Retention — 7 дней.
+- Windows build сохраняет warnings в сторонних FFmpeg headers; GitHub Actions
+  также предупреждает о Node action runtime. Ошибок сборки нет.
+
+История исправлений / границы проверки:
+
 - Исходный commit `c1287c3`: .NET 8 Core/Protocol job прошёл в GitHub Actions
   ([run 37851254775](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37851254775)).
   Windows job тогда упал на неоднозначном `DirectX` в C++/WinRT; namespace исправлен.
 - В `tests/HuntReplay.WindowsTests` добавлены 18 регрессий на настоящих WPF
   `ComboBox`, TwoWay bindings и Dispatcher: Default / explicit selection,
-  refresh, unplug/replug, transient null и замена settings. Этот проект запускается
-  `Build.ps1` на Windows; локальная Linux-проверка не означает его прохождение.
+  refresh, unplug/replug, transient null и замена settings. Они проверяют и
+  сохранённый ID, и реальный `SelectedItem`, а не только значение binding.
+  Первый Windows-прогон обнаружил пустой видимый выбор после unplug; обновление
+  разделено на сброс presentation / замену списка / восстановление выбора,
+  без записи временного null в settings. Последний прогон прошёл все 18 сценариев.
 - NV12 policy проверена по **точному pinned FFmpeg commit**, не по старой ветке:
   динамический D3D11 pool поддерживает отдельные textures и QSV derivation.
   Успешное кодирование на физическом GPU здесь не утверждается.
@@ -60,11 +78,10 @@ Windows SDK, интерактивного Windows рабочего стола и
   `Invalid IPC identifier`, из пользовательского лога определить нельзя;
   теперь ошибка указывает поле и вид запроса без вывода raw payload.
 
-## НЕ проверено в этой среде
+## Всё ещё НЕ проверено
 
-- `dotnet build/publish` полного решения именно .NET 8/Windows target packs;
-- MSVC/C++/WinRT compilation, import libs, loading pinned FFmpeg DLLs on Windows;
-- WPF XAML compilation и реальный GUI (DPI/bindings/tray/toast/player);
+- Запуск опубликованного EXE и загрузка embedded FFmpeg runtime на чистом ПК;
+- Полный интерактивный GUI (DPI/tray/toast/player), помимо WPF selector regressions;
 - `WinVerifyTrust`, UAC и реальный rollback/ACL/registry на Windows;
 - WGC frame capture, GPU surface interop и аппаратный output AMF/NVENC/QSV;
 - WASAPI packets, устройство/clock drift, AAC/audio sync и mux decode integrity;
