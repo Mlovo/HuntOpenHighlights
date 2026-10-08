@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../HuntReplay.Core/HuntReplay.Core.csproj" />
+    <PackageReference Include="Google.Protobuf" Version="3.36.2" />
+    <PackageReference Include="Grpc.Tools" Version="2.84.0" PrivateAssets="All" />
+    <Protobuf Include="../../proto/BusMessage.proto" GrpcServices="None" />
+    <Protobuf Include="../../proto/sdk.proto" GrpcServices="None" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,34 @@
+[
+  {
+    "name": "join",
+    "base64": "CgRqb2luEghIdW50MTg5NhoGR2ZlU0RLKAFYKg=="
+  },
+  {
+    "name": "create",
+    "base64": "CgZjcmVhdGUSCEh1bnQxODk2GgZHZmVTREtYKqIBLAgBEigKJggBEAAoAZoBHQoESHVudBAqIhNIdW50OiBTaG93ZG93biAxODk2"
+  },
+  {
+    "name": "configure",
+    "base64": "Cgljb25maWd1cmUSCEh1bnQxODk2GgZHZmVTREtYKqIBMQgBEi0KKwgBEAAoAYIBIhoPCg1IVU5URVJfS0lMTEVEGg8KDVBMQVlFUl9ET1dORUQ="
+  },
+  {
+    "name": "open",
+    "base64": "CgRvcGVuEghIdW50MTg5NhoGR2ZlU0RLWCqiARoIARIWChQIARAAKAFaDAoKbWF0Y2gtMTg5Ng=="
+  },
+  {
+    "name": "kill",
+    "base64": "CgRraWxsEghIdW50MTg5NhoGR2ZlU0RLWCqiATwIARI4CjYIARAAKAFyLhIKbWF0Y2gtMTg5NhoNSFVOVEVSX0tJTExFRCDg4/7///////8BKIgnMM7C8QU="
+  },
+  {
+    "name": "config",
+    "base64": "CgZjb25maWcSCEh1bnQxODk2GgZHZmVTREtYKqIBDwgBEgsKCQgBEAAoAboBAA=="
+  },
+  {
+    "name": "count",
+    "base64": "CgVjb3VudBIISHVudDE4OTYaBkdmZVNES1gqogEbCAESFwoVCAEQACgBsgEMCgptYXRjaC0xODk2"
+  },
+  {
+    "name": "close",
+    "base64": "CgVjbG9zZRIISHVudDE4OTYaBkdmZVNES1gqogEaCAESFgoUCAEQACgBYgwKCm1hdGNoLTE4OTY="
+  }
+]
