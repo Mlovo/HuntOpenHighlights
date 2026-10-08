@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using HuntReplay.App.Interop;
 
 namespace HuntReplay.App.ViewModels;
@@ -26,10 +25,9 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
 
     public IReadOnlyList<DeviceOption> Options { get => options; private set => Set(ref options, value); }
 
-    [AllowNull]
-    public string SelectedId
+    public string? SelectedId
     {
-        get => readId();
+        get => refreshing ? null : readId();
         set
         {
             if (value is null || refreshing || value == readId()) return;
@@ -48,10 +46,17 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
         refreshing = true;
         try
         {
-            // Replace one complete list, rather than Clear/Add which writes null back through WPF.
+            // Clear only the presentation before replacing items. WPF may read the
+            // source back while its internal selection change is still active; if
+            // that read returns the old ID, SelectedValue can look restored while
+            // SelectedItem remains null. Restore after the replacement has finished.
+            Notify(nameof(SelectedId));
             Options = replacement;
+        }
+        finally
+        {
+            refreshing = false;
             Notify(nameof(SelectedId));
         }
-        finally { refreshing = false; }
     }
 }
