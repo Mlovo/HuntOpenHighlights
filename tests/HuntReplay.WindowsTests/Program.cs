@@ -101,7 +101,12 @@ internal static class Program
     private static void Test(string name, Action test)
     {
         try { test(); passed++; Console.WriteLine("PASS " + name); }
-        catch (Exception ex) { failed++; Console.WriteLine("FAIL " + name + ": " + ex); }
+        catch (Exception ex)
+        {
+            failed++; Console.WriteLine("FAIL " + name + ": " + ex);
+            if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
+                Console.WriteLine("::error title=WPF binding regression::" + (name + ": " + ex).Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A"));
+        }
     }
     private static void True(bool value) { if (!value) throw new InvalidOperationException("Expected true"); }
     private static void Equal(object? expected, object? actual)

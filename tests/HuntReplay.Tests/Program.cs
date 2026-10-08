@@ -148,8 +148,13 @@ public static partial class Program
         Equal(1,Response(s.Process(rows[6])).GetNumberOfHighlightsInGroupResponse.NumberOfHighlights);
         Equal(0,Response(s.Process(rows[7])).Retval);
     }
-    private static void Test(string name,Action action) {try{action();passed++;Console.WriteLine("PASS "+name);}catch(Exception ex){failed++;Console.WriteLine("FAIL "+name+": "+ex);}}
-    private static async Task TestAsync(string name,Func<Task> action) {try{await action();passed++;Console.WriteLine("PASS "+name);}catch(Exception ex){failed++;Console.WriteLine("FAIL "+name+": "+ex);}}
+    private static void Test(string name,Action action) {try{action();passed++;Console.WriteLine("PASS "+name);}catch(Exception ex){failed++;Console.WriteLine("FAIL "+name+": "+ex); ReportCiFailure(name, ex);}}
+    private static async Task TestAsync(string name,Func<Task> action) {try{await action();passed++;Console.WriteLine("PASS "+name);}catch(Exception ex){failed++;Console.WriteLine("FAIL "+name+": "+ex); ReportCiFailure(name, ex);}}
+    private static void ReportCiFailure(string name, Exception error)
+    {
+        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
+            Console.WriteLine("::error title=Core regression::" + (name + ": " + error).Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A"));
+    }
     private static void True(bool value) {if(!value)throw new Exception("Expected true");}
     private static void False(bool value)=>True(!value);
     private static void Equal<T>(T expected,T actual) {if(!EqualityComparer<T>.Default.Equals(expected,actual))throw new Exception($"Expected {expected}, got {actual}");}

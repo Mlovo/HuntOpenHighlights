@@ -16,6 +16,13 @@ function Invoke-Checked([string]$Exe, [string[]]$Arguments) {
     & $Exe @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Exe exited with $LASTEXITCODE" }
 }
+trap {
+    if ($env:GITHUB_ACTIONS -eq 'true') {
+        $Detail = ($_ | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+        Write-Host "::error title=Windows build::$Detail"
+    }
+    throw
+}
 Get-Command dotnet, cmake -ErrorAction Stop | Out-Null
 if (!(Test-Path 'bin/MessageBus.dll')) { throw 'The original signed MessageBus.dll is missing from the repository.' }
 $ExpectedBus = '64e300997b5796da22ad8baa49e4eb919cdc170157cbe6770279f94508a84650'
