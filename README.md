@@ -9,23 +9,39 @@ Python, горячие клавиши драйверных рекордеров 
 встроенные библиотеки, а не внешнее приложение записи. Сжатые пакеты до сохранения
 находятся в RAM, а не во временных видеофайлах на SSD.
 
-> **Статус: pre-release 0.1.1, не сертифицированный Windows-релиз.**
-> [Windows/Linux CI прошёл](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37856493230):
-> **83 теста Core/IPC + 18 WPF binding-регрессий**, MSVC native build и публикация
-> self-contained .NET 8/WPF EXE. Физические WGC/WASAPI, AMF/NVENC/QSV, UAC,
-> Hunt/EAC ещё требуют [аппаратной проверки](docs/WINDOWS_VALIDATION.md).
+> **Статус: pre-release 0.1.2, не сертифицированный Windows-релиз.**
+> [Windows и Ubuntu CI прошли для коммита `8e5f577`](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37927275936):
+> **105 тестов Core/IPC/view-model** (Ubuntu и Windows), **22 WPF-регрессии**, MSVC native
+> build и публикация self-contained .NET 8/WPF EXE. Физические WGC/WASAPI, AMF/NVENC/QSV,
+> UAC, Hunt/EAC ещё требуют [аппаратной проверки](docs/WINDOWS_VALIDATION.md).
 > Успешная компиляция не подтверждает работу на каждой видеокарте или одобрение античита.
+> Подробности и границы проверки: [VALIDATION.md](docs/VALIDATION.md).
 
-**[Скачать тестовую сборку 0.1.1 (Windows x64, unsigned QA)](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37856493230/artifacts/11583784089)**
+**[Скачать тестовую сборку 0.1.2 (Windows x64, unsigned QA)](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37927275936/artifacts/11614791506)**
 — Actions ZIP с `HuntReplayStudio.exe`, лицензиями и `SHA256SUMS.txt`; хранится 7 дней,
-для скачивания может потребоваться вход в GitHub. Это не подписанный релиз.
+для скачивания может потребоваться вход в GitHub. Это не подписанный релиз. Предыдущая
+сборка: [0.1.1](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37856493230/artifacts/11583784089).
 
 При обновлении полностью завершите Studio **через трей**, замените EXE и запустите
-Studio перед игрой. Config и клипы удалять не нужно. Исправления 0.1.1: сохранение
-выбора устройств при refresh/unplug, отдельные NV12 GPU-текстуры вместо
-render-target массива, обработка служебных IPC ACK и точная диагностика SDK.
-Оригинальная NVIDIA DLL не менялась; повторная установка регистрации для этих
-исправлений не требуется.
+Studio перед игрой. Config и клипы удалять не нужно. Повторная установка регистрации NVIDIA
+не требуется: установщик и HKLM-регистрация шины не менялись.
+
+Исправления 0.1.2:
+
+- Токен `BusMessage.uniqueid` с управляющими символами (например, NUL-суффикс длиной 37),
+  из-за которого клиент отключался сразу после JOIN, принимается и возвращается точно.
+  Логи содержат код символа и индекс, сырой токен не печатается.
+- Выпадающие списки показывают подписи, а не `Choice { … }`. Монитор отображается как
+  «Монитор N · W × H · основной»; Windows ID (`\\.\DISPLAYn`) хранится отдельно.
+  Недоступное сохранённое устройство показывается без пути и без GUID.
+- Галерея: при ошибке встроенного плеера показывается HRESULT и подсказка о возможных
+  причинах, без выдуманного диагноза. Ошибка не записывается как сбой экспорта; клип не
+  меняется. Кнопка «Открыть в проигрывателе» открывает MP4 приложением Windows по умолчанию.
+- Жёлтая рамка Windows при захвате не скрывается; пояснение добавлено в настройки и лог.
+
+Исправления 0.1.1: сохранение выбора устройств при refresh/unplug, отдельные NV12
+GPU-текстуры вместо render-target массива, обработка служебных IPC ACK и точная
+диагностика SDK. Native ABI (`hr_abi_version` = 1) в 0.1.2 не менялся.
 
 ## Что реализовано в исходниках
 
@@ -139,7 +155,15 @@ SDK FFmpeg только на этапе сборки, создаёт MSVC import
 - Windows `MediaElement` воспроизводит H.264 штатно при наличии media stack.
   **HEVC/AV1 в плеере могут требовать системных декодеров/расширений Windows**;
   их отсутствие не мешает нативному кодированию, mux и FFmpeg-превью. Это ограничение
-  встроенного плеера данной версии, а не скрытая зависимость записи от OBS.
+  встроенного плеера данной версии, а не скрытая зависимость записи от OBS. Ошибка
+  открытия (`0xC00D11B1`, общий `NS_E_WMP_FILE_OPEN_FAILED`) сама по себе не называет
+  причину: клип при этом сохранён и не изменён, его можно открыть кнопкой
+  «Открыть в проигрывателе», а для новых клипов выбрать H.264.
+- **Жёлтая рамка WGC** остаётся в portable/неупакованном EXE. Официальный путь её
+  убрать требует упакованного приложения с capability `graphicsCaptureWithoutBorder` и
+  согласия пользователя. Studio не меняет реестр, не обходит индикатор и не обещает
+  исчезновения рамки; запись продолжается, причина пишется в лог. См.
+  [VALIDATION.md, раздел 5](docs/VALIDATION.md#5-жёлтая-рамка-wgc-официальные-условия).
 - Интерфейс NVIDIA overlay, screenshots, OPS-оптимизация и encrypted IPC не
   реализуются: сервер явно отказывает в неподдерживаемых SDK-операциях.
   Это совместимый **video Highlights backend**, а не полная NVIDIA App.
@@ -157,12 +181,13 @@ SDK FFmpeg только на этапе сборки, создаёт MSVC import
 dotnet run --project tests/HuntReplay.Tests -c Release
 python tools/CheckSource.py
 
-# Только Windows: 18 регрессий настоящих WPF ComboBox / TwoWay bindings, без GPU:
+# Только Windows: 22 WPF-регрессии (ComboBox, TwoWay bindings, подписи и production Dark.xaml), без GPU:
 dotnet run --project tests/HuntReplay.WindowsTests -c Release
 
 # На Windows, при УЖЕ запущенном буфере: реальный IPC smoke test двух фрагов через 12 с.
-# Не меняет источник захвата и не нажимает клавиши.
-dotnet run --project tests/HuntReplay.Tests -c Release -- --pipe-smoke --multi
+# Не меняет источник захвата и не нажимает клавиши. --control-id шлёт SDK-токен с U+0000
+# на конце, как в полевом отчёте 0.1.1.
+dotnet run --project tests/HuntReplay.Tests -c Release -- --pipe-smoke --multi [--control-id]
 ```
 
 | Модуль | Назначение |
@@ -172,7 +197,7 @@ dotnet run --project tests/HuntReplay.Tests -c Release -- --pipe-smoke --multi
 | `src/HuntReplay.App` | WPF UI, orchestration, IPC, UAC, нативный interop, desktop integration |
 | `native/` | C++20 WGC/D3D11, AMF/NVENC/QSV/x264, WASAPI/AAC, MP4 mux, thumbnails |
 | `tests/HuntReplay.Tests` | исполняемые regression-тесты и live IPC smoke test |
-| `tests/HuntReplay.WindowsTests` | WPF-регрессии выбора устройств / refresh / unplug |
+| `tests/HuntReplay.WindowsTests` | WPF-регрессии выбора устройств, refresh / unplug и подписей ComboBox |
 | `tools/` | зафиксированные зависимости, сборка, статические проверки |
 | `.github/workflows/studio.yml` | .NET 8 regression suite + Windows build/QA artifact |
 
