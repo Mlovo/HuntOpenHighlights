@@ -176,7 +176,8 @@ SDK FFmpeg только на этапе сборки, создаёт MSVC import
 - **Жёлтая рамка WGC** остаётся, если Windows не выдала согласие. Studio при старте записи
   официально запрашивает захват без рамки (`RequestAccessAsync`, Borderless, таймаут 3 с).
   Официальный путь выдаёт согласие только упакованному приложению с capability
-  `graphicsCaptureWithoutBorder` и решением пользователя; portable EXE его не получает.
+  `graphicsCaptureWithoutBorder` и решением пользователя; для portable EXE ожидается отказ
+  (на железе не проверено, см. [VALIDATION.md](docs/VALIDATION.md)).
   Studio не меняет реестр, не обходит индикатор и не обещает исчезновения рамки; запись
   продолжается, причина пишется в лог. См.
   [VALIDATION.md, раздел 5](docs/VALIDATION.md#5-жёлтая-рамка-wgc-официальные-условия).
