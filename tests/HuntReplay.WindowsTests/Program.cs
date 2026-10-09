@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -208,6 +209,7 @@ internal static class Program
         }
     }
     private static void True(bool value) { if (!value) throw new InvalidOperationException("Expected true"); }
+    private static void False(bool value) => True(!value);
     private static void Equal(object? expected, object? actual)
     {
         if (!Equals(expected, actual)) throw new InvalidOperationException($"Expected '{expected ?? "<null>"}', got '{actual ?? "<null>"}'");
