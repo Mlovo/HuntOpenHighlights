@@ -94,10 +94,13 @@ embedded resources должны обновиться вместе. Не копи
 - Windows 2022 + .NET 8 + MSVC: полный native/WPF build, тесты и artifact
   `HuntReplayStudio-win-x64-unsigned-QA` (хранится 7 дней).
 
-Workflow запускается при push/PR либо вручную. Предыдущий опубликованный QA artifact —
-0.1.1, [run 37856493230](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37856493230).
-Для 0.1.2 результат фиксируется в `VALIDATION.md` только после успешного прогона;
-до этого сборка 0.1.2 не считается опубликованной. Точные границы проверки — там же.
+Workflow запускается при push/PR либо вручную. Текущий QA artifact — 0.1.3,
+[run 37931206688](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37931206688)
+(artifact `HuntReplayStudio-win-x64-unsigned-QA`, id 11616875561). Предыдущие: 0.1.2
+([run 37927275936](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37927275936)) и 0.1.1
+([run 37856493230](https://github.com/Mlovo/HuntOpenHighlights/actions/runs/37856493230)).
+Результат фиксируется в `VALIDATION.md` только после успешного прогона; до этого сборка
+не считается опубликованной. Точные границы проверки — там же.
 Hosted runner не подтверждает реальное аппаратное кодирование, интерактивный
 WGC или совместимость с EAC.
 
