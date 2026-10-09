@@ -82,4 +82,11 @@ internal static class DesktopIntegration
     {
         Process.Start(new ProcessStartInfo("explorer.exe") { Arguments = "/select,\"" + Path.GetFullPath(file) + "\"", UseShellExecute = true });
     }
+    // Opens the already saved MP4 with whatever Windows associates with .mp4. Nothing is re-encoded or copied.
+    public static void OpenWithDefaultPlayer(string file)
+    {
+        var full = Path.GetFullPath(file);
+        if (!File.Exists(full)) throw new FileNotFoundException("Клип не найден.", full);
+        Process.Start(new ProcessStartInfo(full) { UseShellExecute = true });
+    }
 }

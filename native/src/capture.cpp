@@ -132,7 +132,9 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
         audio->start();
         capture_session.StartCapture();
         running = true; ready.set_value(); signaled = true;
-        log(0, "WGC + D3D11 NV12 + " + utf8(description) + " + WASAPI started. SDR capture; OS capture indicator is retained.");
+        log(0, "WGC + D3D11 NV12 + " + utf8(description) + " + WASAPI started. SDR capture; OS capture indicator is retained: "
+            "Windows removes it only for packaged apps with the graphicsCaptureWithoutBorder capability and user consent. "
+            "Recording continues with the indicator.");
         ComPtr<ID3D11Texture2D> last_texture;
         int input_width = 0, input_height = 0;
         int64_t last_pts = -1;

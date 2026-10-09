@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using HuntReplay.App.ViewModels;
+using HuntReplay.Core.Media;
 
 namespace HuntReplay.App.Views;
 public partial class GalleryView : UserControl
@@ -57,11 +58,14 @@ public partial class GalleryView : UserControl
     { Player.Pause(); playing = false; PlayButton.Content = "▶"; Player.Position = TimeSpan.Zero; }
     private void MediaFailed(object sender, ExceptionRoutedEventArgs e)
     {
+        // Keep the HRESULT (not a guess at its cause) and the saved file untouched; only the preview fails.
+        var hresult = e.ErrorException?.HResult ?? 0;
+        var fileName = (ClipList.SelectedItem as ClipViewModel)?.FileName ?? "клип";
         Close();
-        PlayerHint.Text = "Windows не может воспроизвести этот кодек.\nHEVC / AV1 могут требовать системного расширения.";
+        PlayerHint.Text = PlaybackDiagnostics.Hint(hresult);
         PlayerHint.TextAlignment = TextAlignment.Center;
         PlayerHint.FontSize = 11;
-        if (DataContext is MainViewModel model) model.Error(new InvalidOperationException("Плеер: " + e.ErrorException.Message));
+        if (DataContext is MainViewModel model) model.PlaybackFailed(hresult, fileName);
     }
     private void SeekStarted(object sender, MouseButtonEventArgs e) => dragging = true;
     private void SeekEnded(object sender, MouseButtonEventArgs e) { dragging = false; Player.Position = TimeSpan.FromSeconds(Seek.Value); }

@@ -9,6 +9,7 @@ using HuntReplay.App.Interop;
 using HuntReplay.App.Services;
 using HuntReplay.App.Views;
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Media;
 using HuntReplay.Core.Storage;
 using Microsoft.Win32;
 
@@ -97,6 +98,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ICommand DeleteCommand { get; }
     public ICommand RenameCommand { get; }
     public ICommand RevealCommand { get; }
+    public ICommand OpenInPlayerCommand { get; }
     public ICommand DiagnoseCommand { get; }
     public ICommand SaveReportCommand { get; }
     public ICommand InstallCommand { get; }
@@ -138,6 +140,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         DeleteCommand = new RelayCommand(_ => Safe(DeleteClip), _ => SelectedClip is not null);
         RenameCommand = new RelayCommand(_ => Safe(RenameClip), _ => SelectedClip is not null);
         RevealCommand = new RelayCommand(_ => Safe(() => DesktopIntegration.RevealFile(SelectedClip!.Clip.FullPath)), _ => SelectedClip is not null);
+        OpenInPlayerCommand = new RelayCommand(_ => Safe(() => DesktopIntegration.OpenWithDefaultPlayer(SelectedClip!.Clip.FullPath)), _ => SelectedClip is not null);
         DiagnoseCommand = new AsyncCommand(DiagnoseAsync, Error, () => !Busy);
         SaveReportCommand = new RelayCommand(_ => Safe(SaveReport));
         InstallCommand = new AsyncCommand(InstallAsync, Error, () => !Busy);
@@ -402,6 +405,12 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         CommandManager.InvalidateRequerySuggested();
     }
     public void Error(Exception ex) { Message = ex.Message; log.Write(ex.Message, "ERROR"); }
+    // A preview failure is not an export failure: the saved MP4 stays as written, so this is a warning, not an error.
+    public void PlaybackFailed(int hresult, string fileName)
+    {
+        Message = "Клип сохранён: " + fileName + ". Встроенный проигрыватель не открыл его (" + PlaybackDiagnostics.Code(hresult) + ").";
+        log.Write(PlaybackDiagnostics.LogLine(hresult, fileName), "WARN");
+    }
     private void Safe(Action action) { try { action(); } catch (Exception ex) { Error(ex); } }
     public async ValueTask DisposeAsync()
     {

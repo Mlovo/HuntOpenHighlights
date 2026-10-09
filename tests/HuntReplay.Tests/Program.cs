@@ -15,7 +15,7 @@ public static partial class Program
     private static int passed, failed;
     public static async Task<int> Main(string[] args)
     {
-        if (args.Contains("--pipe-smoke")) return await LivePipeSmoke.RunAsync(args.Contains("--multi"));
+        if (args.Contains("--pipe-smoke")) return await LivePipeSmoke.RunAsync(args.Contains("--multi"), args.Contains("--control-id"));
         Test("defaults satisfy the settings contract", () => Settings().Validate());
         Test("unknown enum rejected", () => { var s = Settings(); s.Video.Codec = (VideoCodec)99; Throws<InvalidDataException>(s.Validate); });
         Test("NaN post-roll rejected", () => { var s = Settings(); s.Replay.PostEventSeconds = double.NaN; Throws<InvalidDataException>(s.Validate); });
@@ -113,6 +113,7 @@ public static partial class Program
         RuntimeRegressionTests();
         IpcCorrelationTests();
         DeviceSelectionTests();
+        PlaybackDiagnosticsTests();
         Console.WriteLine($"\n{passed} passed; {failed} failed.");
         return failed == 0 ? 0 : 1;
     }

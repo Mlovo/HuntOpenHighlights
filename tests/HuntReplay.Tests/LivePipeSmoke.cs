@@ -8,10 +8,11 @@ namespace HuntReplay.Tests;
 /// <summary>An explicit developer tool, never included in the recorder. No game injection or keyboard input.</summary>
 internal static class LivePipeSmoke
 {
-    public static async Task<int> RunAsync(bool multi)
+    public static async Task<int> RunAsync(bool multi, bool controlId = false)
     {
         Console.WriteLine("This sends real test highlight events to a running Studio. Start its buffer first.");
         Console.WriteLine("Use an explicitly selected monitor or a visible game window. No recording source is changed by this tool.");
+        if (controlId) Console.WriteLine("SDK requests carry a 37-unit correlation ID ending in U+0000, the field-report shape.");
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         using var pipe = new NamedPipeClientStream(".", "NvMessageBusBroadcast", PipeDirection.InOut, PipeOptions.Asynchronous);
         try
@@ -49,6 +50,7 @@ internal static class LivePipeSmoke
             {
                 request.VersionMajor = 1; request.VersionMinor = 0; request.Component = (SDKComponent)1;
                 var bus = Envelope();
+                if (controlId) bus.Uniqueid += "\0"; // opaque token: the reply must echo it exactly
                 bus.Generic = new BusMessage.Types.Generic { Type = 1, Data = new SDKIPCMessage { Request = request }.ToByteString() };
                 await BusFraming.WriteAsync(pipe, bus, stop.Token);
                 var reply = await BusFraming.ReadAsync(pipe, stop.Token) ?? throw new EndOfStreamException();
