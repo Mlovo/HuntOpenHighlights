@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(HuntReplayMedia VERSION 0.1.2 LANGUAGES CXX)
+project(HuntReplayMedia VERSION 0.1.1 LANGUAGES CXX)
 if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Build with Visual Studio 2022 x64 and Windows SDK 10.0.22621+ on Windows.")
 endif()
