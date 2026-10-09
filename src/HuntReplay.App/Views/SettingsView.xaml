@@ -1,0 +1,79 @@
+<UserControl x:Class="HuntReplay.App.Views.SettingsView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="0,18,0,0" Margin="0,18,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="Изменения перезапустят буфер. Ожидающие хайлайты сначала будут сохранены." Style="{StaticResource MutedText}" VerticalAlignment="Center" Margin="0,0,20,0"/><Button Grid.Column="1" Content="Сохранить настройки" Command="{Binding ApplySettingsCommand}" Style="{StaticResource PrimaryButton}"/></Grid></Border>
+    <TabControl>
+      <TabItem Header="Видео"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,8,0">
+        <TextBlock Text="Из игры — прямо в память" Style="{StaticResource SectionTitle}"/><TextBlock Text="WGC захватывает экран средствами Windows. Сжатие — через GPU, без внешнего рекордера." Style="{StaticResource MutedText}" Margin="0,0,0,22"/>
+        <Border Style="{StaticResource Card}"><StackPanel>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="24"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Источник захвата" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding Sources}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SettingsEdit.Video.Source}"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="Монитор" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding MonitorSelection.Options}" DisplayMemberPath="Name" SelectedValuePath="Id" IsSynchronizedWithCurrentItem="False" SelectedValue="{Binding MonitorSelection.SelectedId, Mode=TwoWay}"/></StackPanel></Grid>
+          <TextBlock Text="В режиме окна рабочий стол не захватывается при отсутствии игры. Монитор — явное разрешение записывать весь экран." Style="{StaticResource MutedText}" Margin="0,12,0,24"/>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="24"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Разрешение" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding Resolutions}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SettingsEdit.Video.Resolution}"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="Частота кадров / FPS" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding FrameRates}" SelectedItem="{Binding SettingsEdit.Video.Fps}"/></StackPanel></Grid>
+          <Border Height="1" Background="{StaticResource Border}" Margin="0,24"/>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="24"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Видеокодировщик" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding Encoders}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SettingsEdit.Video.Encoder}"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="Кодек" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding Codecs}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SettingsEdit.Video.Codec}"/></StackPanel></Grid>
+          <TextBlock Text="Auto выбирает AMF / NVENC / QSV по GPU захватываемого дисплея. Возможность кодирования проверяется при старте; автоматического перехода на CPU нет." Style="{StaticResource MutedText}" Margin="0,12,0,22"/>
+          <Grid><TextBlock Text="Битрейт"/><TextBlock Text="{Binding Value, ElementName=Bitrate, StringFormat={}{0:F0} Мбит/с}" HorizontalAlignment="Right" Foreground="{StaticResource Accent}"/></Grid>
+          <Slider x:Name="Bitrate" Minimum="10" Maximum="80" Value="{Binding SettingsEdit.Video.BitrateMbps}"/>
+          <Grid Margin="0,0,0,24"><TextBlock Text="10 Мбит/с" FontSize="10" Foreground="{StaticResource Muted}"/><TextBlock Text="80 Мбит/с" HorizontalAlignment="Right" FontSize="10" Foreground="{StaticResource Muted}"/></Grid>
+          <TextBlock Text="Интервал ключевых кадров / секунды" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding GopLengths}" SelectedItem="{Binding SettingsEdit.Video.GopSeconds}" Width="190" HorizontalAlignment="Left"/>
+          <TextBlock Text="GOP 1 сек — более точная обрезка без перекодирования. HDR и 10-bit не поддерживаются: используйте SDR." Style="{StaticResource MutedText}" Margin="0,12,0,0"/>
+        </StackPanel></Border>
+      </StackPanel></ScrollViewer></TabItem>
+      <TabItem Header="Аудио"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,8,0">
+        <TextBlock Text="Звук вашей охоты" Style="{StaticResource SectionTitle}"/><TextBlock Text="WASAPI loopback · AAC 48 кГц · стерео" Style="{StaticResource MutedText}" Margin="0,0,0,22"/>
+        <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="Вывод / звук игры" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding OutputSelection.Options}" DisplayMemberPath="Name" SelectedValuePath="Id" IsSynchronizedWithCurrentItem="False" SelectedValue="{Binding OutputSelection.SelectedId, Mode=TwoWay}"/>
+          <TextBlock Text="Записывается весь звук выбранных наушников или динамиков, включая браузер и Discord. Это не изолированный захват только процесса игры." Style="{StaticResource MutedText}" Margin="0,12,0,20"/>
+          <Border Height="1" Background="{StaticResource Border}" Margin="0,0,0,17"/>
+          <CheckBox Content="Записывать микрофон" IsChecked="{Binding SettingsEdit.Audio.MicrophoneEnabled}"/>
+          <TextBlock Text="Микрофон" Margin="0,13,0,9"/><ComboBox ItemsSource="{Binding MicrophoneSelection.Options}" DisplayMemberPath="Name" SelectedValuePath="Id" IsSynchronizedWithCurrentItem="False" SelectedValue="{Binding MicrophoneSelection.SelectedId, Mode=TwoWay}"/>
+          <Grid Margin="0,24,0,0"><TextBlock Text="Громкость микрофона"/><TextBlock Text="{Binding Value, ElementName=MicGain, StringFormat={}{0:F0}%}" HorizontalAlignment="Right" Foreground="{StaticResource Accent}"/></Grid><Slider x:Name="MicGain" Minimum="0" Maximum="100" Value="{Binding SettingsEdit.Audio.MicrophoneVolume}"/>
+          <TextBlock Text="Аудиодорожки" Margin="0,18,0,9"/><ComboBox ItemsSource="{Binding AudioModes}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SettingsEdit.Audio.Mode}"/>
+          <TextBlock Text="В раздельном режиме основной трек — звук игры; второй — микрофон. Встроенный Windows-плеер обычно воспроизводит первый трек." Style="{StaticResource MutedText}" Margin="0,12,0,0"/>
+        </StackPanel></Border>
+        <Border Style="{StaticResource Card}" Margin="0,16,0,0"><TextBlock Text="Если наушники отключены или Windows меняет endpoint, ошибка будет показана в журнале. Автоматический режим повторит запуск до трёх раз. Для микрофона разрешите доступ классическим приложениям в параметрах конфиденциальности Windows." Style="{StaticResource MutedText}"/></Border>
+      </StackPanel></ScrollViewer></TabItem>
+      <TabItem Header="Буфер и события"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,8,0">
+        <TextBlock Text="Достаточно времени до и после" Style="{StaticResource SectionTitle}"/><TextBlock Text="В RAM хранятся уже сжатые пакеты. Диск используется только при сохранении клипа." Style="{StaticResource MutedText}" Margin="0,0,0,22"/>
+        <Border Style="{StaticResource Card}"><StackPanel>
+          <Grid><TextBlock Text="Длина буфера"/><TextBlock Text="{Binding Value, ElementName=BufferLength, StringFormat={}{0:F0} сек}" HorizontalAlignment="Right" Foreground="{StaticResource Accent}"/></Grid><Slider x:Name="BufferLength" Minimum="15" Maximum="300" TickFrequency="5" Value="{Binding SettingsEdit.Replay.BufferSeconds}"/>
+          <TextBlock Text="60 секунд при 25 Мбит/с ≈ 179 МиБ видео. Незавершённая серия временно удерживает дополнительные GOP; при нехватке RAM начало клипа укорачивается с предупреждением." Style="{StaticResource MutedText}" Margin="0,2,0,22"/>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="24"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Постзапись / секунды" Margin="0,0,0,9"/><TextBox Text="{Binding SettingsEdit.Replay.PostEventSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="Предзапись, если игра не задала окно / сек" Margin="0,0,0,9"/><TextBox Text="{Binding SettingsEdit.Replay.PreEventSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"/></StackPanel></Grid>
+          <Border Height="1" Background="{StaticResource Border}" Margin="0,24,0,16"/>
+          <CheckBox Content="Объединять близкие события в один хайлайт" IsChecked="{Binding SettingsEdit.Replay.Coalesce}"/>
+          <TextBlock Text="Окно объединения по умолчанию — 15 секунд. Файл появится после ожидания следующего фрага, но лишнее ожидание в сам клип не попадёт." Style="{StaticResource MutedText}" Margin="0,3,0,17"/>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="24"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Интервал между событиями / сек" Margin="0,0,0,9"/><TextBox Text="{Binding SettingsEdit.Replay.CoalesceGapSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="Максимальная серия / секунды" Margin="0,0,0,9"/><TextBox Text="{Binding SettingsEdit.Replay.MaxSequenceSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"/></StackPanel></Grid>
+          <Border Height="1" Background="{StaticResource Border}" Margin="0,24,0,17"/>
+          <TextBlock Text="ИГРОВЫЕ СОБЫТИЯ" Style="{StaticResource Eyebrow}" Margin="0,0,0,9"/>
+          <CheckBox Content="Убийство охотника  /  HUNTER_KILLED" IsChecked="{Binding SettingsEdit.Replay.HunterKilled}"/>
+          <CheckBox Content="Смерть или нок игрока  /  PLAYER_DOWNED" IsChecked="{Binding SettingsEdit.Replay.PlayerDowned}"/>
+        </StackPanel></Border>
+      </StackPanel></ScrollViewer></TabItem>
+      <TabItem Header="Хранилище"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,8,0">
+        <TextBlock Text="Ваша локальная библиотека" Style="{StaticResource SectionTitle}"/><TextBlock Text="MP4 с быстрым стартом · оригинальное качество · без повторного кодирования" Style="{StaticResource MutedText}" Margin="0,0,0,22"/>
+        <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="Папка сохранения" Margin="0,0,0,9"/><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox Text="{Binding SettingsEdit.Storage.Directory, UpdateSourceTrigger=PropertyChanged}"/><Button Grid.Column="1" Content="Обзор…" Command="{Binding BrowseCommand}" Margin="10,0,0,0"/></Grid>
+          <TextBlock Text="В этой папке только видеофайлы MP4. Метаданные и превью клипов хранятся в папке данных Studio (HuntReplayStudio\library), в режиме --portable — рядом с EXE." Style="{StaticResource MutedText}" Margin="0,9,0,0"/>
+          <TextBlock Text="Шаблон имени файла" Margin="0,24,0,9"/><TextBox Text="{Binding SettingsEdit.Storage.FileNameTemplate, UpdateSourceTrigger=PropertyChanged}" FontFamily="Consolas"/>
+          <TextBlock Text="Разрешены {event}, {date}, {time}. Например: Hunt_MULTI_KILL_x2_2026-10-08_21-14-08-123.mp4" Style="{StaticResource MutedText}" Margin="0,12,0,24"/>
+          <Border Height="1" Background="{StaticResource Border}" Margin="0,0,0,16"/>
+          <CheckBox Content="Автоматически удалять старые клипы при достижении лимита" IsChecked="{Binding SettingsEdit.Storage.AutoCleanup}"/>
+          <TextBlock Text="Лимит библиотеки" Margin="0,13,0,9"/><ComboBox ItemsSource="{Binding DiskLimits}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SettingsEdit.Storage.LimitGb}" Width="230" HorizontalAlignment="Left"/>
+          <TextBlock Text="Очистка удаляет только клипы, которые записала Studio. Чужие файлы в папке, файл, открытый в плеере, и только что сохранённый клип не затрагиваются. Безлимитный режим ничего не удаляет." Style="{StaticResource MutedText}" Margin="0,15,0,0"/>
+        </StackPanel></Border>
+      </StackPanel></ScrollViewer></TabItem>
+      <TabItem Header="Система"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,8,0">
+        <TextBlock Text="Пусть Studio работает в фоне" Style="{StaticResource SectionTitle}"/><TextBlock Text="Администратор нужен только установщику MessageBus, а не записи или игре." Style="{StaticResource MutedText}" Margin="0,0,0,22"/>
+        <Border Style="{StaticResource Card}"><StackPanel>
+          <TextBlock Text="ГОРЯЧАЯ КЛАВИША И УВЕДОМЛЕНИЯ" Style="{StaticResource Eyebrow}" Margin="0,0,0,16"/>
+          <TextBlock Text="Ручное сохранение клипа" Margin="0,0,0,9"/><ComboBox ItemsSource="{Binding Hotkeys}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding SettingsEdit.System.HotkeyVirtualKey}" Width="170" HorizontalAlignment="Left"/>
+          <CheckBox Content="Короткий звук после успешного сохранения" IsChecked="{Binding SettingsEdit.System.SoundOnSave}" Margin="0,14,0,0"/>
+          <Border Height="1" Background="{StaticResource Border}" Margin="0,24,0,17"/>
+          <TextBlock Text="АВТОМАТИЗАЦИЯ" Style="{StaticResource Eyebrow}" Margin="0,0,0,9"/>
+          <CheckBox Content="Запускать с Windows · свёрнутым в трей" IsChecked="{Binding SettingsEdit.System.StartWithWindows}"/>
+          <CheckBox Content="Запускать буфер вместе с игрой и останавливать при выходе" IsChecked="{Binding SettingsEdit.System.AutoBufferWithGame}"/>
+          <CheckBox Content="Закрытие окна сворачивает приложение в трей" IsChecked="{Binding SettingsEdit.System.CloseToTray}"/>
+          <TextBlock Text="Ручная остановка приостанавливает автоматику до следующего запуска игры. Для полного выхода используйте меню в трее." Style="{StaticResource MutedText}" Margin="0,6,0,0"/>
+        </StackPanel></Border>
+        <Border Style="{StaticResource Card}" Margin="0,16,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Что-то не записывается?" FontWeight="SemiBold"/><TextBlock Text="Проверка DLL, реестра, пайпа и выбранного кодека." Style="{StaticResource MutedText}" Margin="0,6,12,0"/></StackPanel><Button Grid.Column="1" Content="Проверить систему" Command="{Binding DiagnoseCommand}" VerticalAlignment="Center"/></Grid></Border>
+      </StackPanel></ScrollViewer></TabItem>
+    </TabControl>
+  </DockPanel>
+</UserControl>

@@ -1,0 +1,50 @@
+name: HuntReplay Studio
+on:
+  push:
+    branches: [main, 'arena/**']
+    tags: ['v*']
+    paths: ['src/**', 'native/**', 'tests/**', 'tools/**', 'proto/*.proto', '*.props', '*.json', 'HuntReplayStudio.sln', '.github/workflows/studio.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  core-and-protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet run --project tests/HuntReplay.Tests --configuration Release
+      - run: python3 tools/CheckSource.py
+  windows-build:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: .cache/downloads
+          key: ffmpeg-${{ runner.os }}-${{ hashFiles('tools/ffmpeg.lock.json') }}
+      - name: Build WGC / WASAPI engine and self-contained WPF executable
+        shell: pwsh
+        run: ./tools/Build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HuntReplayStudio-win-x64-unsigned-QA
+          path: artifacts/publish/
+          retention-days: 7
+      - name: Publish to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/publish/HuntReplayStudio.exe
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true

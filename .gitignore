@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+.venv/
+env/
+venv/
+*.tmp
+
+# HuntReplay Studio (.NET / native build output)
+[Bb]in/
+[Oo]bj/
+src/**/bin/
+src/**/obj/
+tests/**/bin/
+tests/**/obj/
+!/bin/
+!/bin/MessageBus.dll
+.vs/
+.cache/
+artifacts/
+TestResults/
+native/vendor/
+native/out/
+*.user
+*.suo
+*.partial.mp4
