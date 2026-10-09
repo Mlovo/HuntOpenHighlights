@@ -67,6 +67,8 @@ public partial class App : Application
             activationWait = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => Dispatcher.BeginInvoke(() => window?.ShowStudio()), null, Timeout.Infinite, false);
             bool portable = e.Args.Contains("--portable");
             var root = portable ? AppContext.BaseDirectory : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HuntReplayStudio");
+            // Clip metadata and thumbnails live here, never in the clips folder (which holds only MP4 files).
+            var libraryRoot = Path.Combine(root, "library");
             Directory.CreateDirectory(root);
             log = new StudioLog(root);
             DispatcherUnhandledException += (_, args) =>
@@ -91,9 +93,9 @@ public partial class App : Application
                 settings.System.FirstRunCompleted = true;
                 store.Save(settings);
             }
-            recorder = new RecorderService(settings, log);
+            recorder = new RecorderService(settings, log, libraryRoot);
             pipe = new HighlightsPipeServer(recorder, log);
-            model = new MainViewModel(store, recorder, pipe, log, portable);
+            model = new MainViewModel(store, recorder, pipe, log, portable, libraryRoot);
             window = new MainWindow { DataContext = model }; MainWindow = window;
             CreateTray();
             try { ToastNotificationManagerCompat.OnActivated += _ => Dispatcher.BeginInvoke(() => { if (model is not null) model.Page = "Gallery"; window?.ShowStudio(); }); }

@@ -23,6 +23,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly HighlightsPipeServer pipe;
     private readonly StudioLog log;
     private readonly bool portable;
+    private readonly string libraryRoot;
     private readonly CancellationTokenSource stop = new();
     private readonly SemaphoreSlim operation = new(1, 1);
     private Task? watcher;
@@ -117,10 +118,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<Choice<int>> DiskLimits { get; } = [new(15, "15 ГБ"), new(30, "30 ГБ"), new(60, "60 ГБ"), new(0, "Без ограничений")];
     public IReadOnlyList<Choice<int>> Hotkeys { get; } = Enumerable.Range(0x70, 12).Select(k => new Choice<int>(k, "F" + (k - 0x6F))).ToArray();
 
-    public MainViewModel(SettingsStore store, RecorderService recorder, HighlightsPipeServer pipe, StudioLog log, bool portable)
+    public MainViewModel(SettingsStore store, RecorderService recorder, HighlightsPipeServer pipe, StudioLog log, bool portable, string libraryRoot)
     {
         dispatcher = Dispatcher.CurrentDispatcher;
-        this.store = store; this.recorder = recorder; this.pipe = pipe; this.log = log; this.portable = portable;
+        this.store = store; this.recorder = recorder; this.pipe = pipe; this.log = log; this.portable = portable; this.libraryRoot = libraryRoot;
         settingsEdit = recorder.Settings.Clone();
         MonitorSelection = new(0, "Основной монитор · автоматически",
             () => SettingsEdit.Video.MonitorDevice, value => SettingsEdit.Video.MonitorDevice = value);
@@ -310,11 +311,26 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         return false;
     }
 
+    private ClipLibrary Library() => new(recorder.Settings.Storage.Directory, libraryRoot);
+
     public async Task RefreshClipsAsync()
     {
         var directory = recorder.Settings.Storage.Directory;
         var selectedId = SelectedClip?.Clip.Metadata.Id;
-        var result = await Task.Run(() => new ClipLibrary(directory).List().Take(500).Select(c => new ClipViewModel(c)).ToArray());
+        var result = await Task.Run(() =>
+        {
+            var library = new ClipLibrary(directory, libraryRoot);
+            try
+            {
+                // Moves 0.1.2 sidecars out of the clips folder and tidies records of deleted MP4 files.
+                var report = library.Maintain();
+                if (report.Adopted + report.Relocated + report.Pruned > 0)
+                    log.Write($"Библиотека клипов: перенесено из папки клипов {report.Adopted}, перепривязано после переименования папки {report.Relocated}, удалено служебных записей {report.Pruned}.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { log.Write("Библиотека клипов: обслуживание пропущено: " + ex.Message, "WARN"); }
+            return library.List().Take(500).Select(c => new ClipViewModel(c)).ToArray();
+        });
         Clips.Clear(); foreach (var clip in result) Clips.Add(clip);
         SelectedClip = Clips.FirstOrDefault(c => c.Clip.Metadata.Id == selectedId);
         Notify(nameof(RecentClips)); Notify(nameof(HasClips)); Notify(nameof(ClipCount)); Notify(nameof(LibrarySummary));
@@ -329,7 +345,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         if (SelectedClip is not { } clip || MessageBox.Show("Удалить клип без возможности восстановления?\n\n" + clip.FileName,
             "Удаление хайлайта", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         ClosePlayer?.Invoke();
-        new ClipLibrary(recorder.Settings.Storage.Directory).Delete(clip.Clip);
+        Library().Delete(clip.Clip);
         Clips.Remove(clip); SelectedClip = null;
         Notify(nameof(RecentClips)); Notify(nameof(HasClips)); Notify(nameof(ClipCount)); Notify(nameof(LibrarySummary));
     }
@@ -339,7 +355,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         var dialog = new InputDialog("Переименовать клип", clip.FileName) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true) return;
         ClosePlayer?.Invoke();
-        var renamed = new ClipLibrary(recorder.Settings.Storage.Directory).Rename(clip.Clip, dialog.Value);
+        var renamed = Library().Rename(clip.Clip, dialog.Value);
         var index = Clips.IndexOf(clip); var model = new ClipViewModel(renamed);
         Clips[index] = model; SelectedClip = model; Notify(nameof(RecentClips));
     }

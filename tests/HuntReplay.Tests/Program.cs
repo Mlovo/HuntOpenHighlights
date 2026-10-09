@@ -67,12 +67,136 @@ public static partial class Program
         });
         Test("force flush returns each pending plan only once", () => { var p=new HighlightPlanner(new()); p.Register(Event("a",100)); Equal(1,p.TakeReady(101_000_000,true).Count); Equal(0,p.TakeReady(999_000_000,true).Count); });
 
-        Test("library rename moves MP4 and metadata", () => InTemp(path => { var l=new ClipLibrary(path+Path.DirectorySeparatorChar); var c=CreateClip(l,"a.mp4",10); var r=l.Rename(c,"b.mp4"); True(File.Exists(r.FullPath)); False(File.Exists(c.FullPath)); Equal(c.Metadata.Id,l.List().Single().Metadata.Id); }));
-        Test("library traversal and reserved names rejected", () => InTemp(path=>{var l=new ClipLibrary(path);var c=CreateClip(l,"a.mp4",10);Throws<InvalidDataException>(()=>l.Rename(c,"../out.mp4"));Throws<InvalidDataException>(()=>l.Rename(c,"AUX.mp4"));}));
-        Test("unmanaged files are never deleted", () => InTemp(path=>{var l=new ClipLibrary(path);var c=CreateClip(l,"a.mp4",10);File.Delete(c.SidecarPath);Throws<IOException>(()=>l.Delete(c));True(File.Exists(c.FullPath));}));
-        Test("retention protects current clip and unrelated files", () => InTemp(path=>{var l=new ClipLibrary(path);var oldest=CreateClip(l,"old.mp4",8,DateTimeOffset.Now.AddDays(-2));var newest=CreateClip(l,"new.mp4",8);File.WriteAllText(Path.Combine(path,"unrelated.mp4"),"not-owned");Equal(1,l.EnforceByteLimit(15,new HashSet<Guid>{newest.Metadata.Id}));False(File.Exists(oldest.FullPath));True(File.Exists(newest.FullPath));True(File.Exists(Path.Combine(path,"unrelated.mp4")));}));
-        Test("unlimited retention deletes nothing", () => InTemp(path=>{var l=new ClipLibrary(path);CreateClip(l,"a.mp4",10);Equal(0,l.EnforceLimit(new(){Directory=path,AutoCleanup=true,LimitGb=0}));}));
-        Test("bad sidecar cannot hide healthy clips", () => InTemp(path=>{var l=new ClipLibrary(path);CreateClip(l,"a.mp4",10);File.WriteAllText(Path.Combine(path,"bad.mp4.hunt.json"),"garbage");Equal(1,l.List().Count);}));
+        Test("library rename moves MP4 and keeps the same record Id", () => InLibrary((path, store) => { var l=new ClipLibrary(path+Path.DirectorySeparatorChar, store); var c=CreateClip(l,"a.mp4",10); var r=l.Rename(c,"b.mp4"); True(File.Exists(r.FullPath)); False(File.Exists(c.FullPath)); Equal(c.Metadata.Id,l.List().Single().Metadata.Id); }));
+        Test("library traversal and reserved names rejected", () => InLibrary((path, store) =>{var l=new ClipLibrary(path, store);var c=CreateClip(l,"a.mp4",10);Throws<InvalidDataException>(()=>l.Rename(c,"../out.mp4"));Throws<InvalidDataException>(()=>l.Rename(c,"AUX.mp4"));}));
+        Test("unmanaged files are never deleted", () => InLibrary((path, store) =>{var l=new ClipLibrary(path, store);var c=CreateClip(l,"a.mp4",10);File.Delete(c.RecordPath);Throws<IOException>(()=>l.Delete(c));True(File.Exists(c.FullPath));}));
+        Test("retention protects current clip and unrelated files", () => InLibrary((path, store) =>{var l=new ClipLibrary(path, store);var oldest=CreateClip(l,"old.mp4",8,DateTimeOffset.Now.AddDays(-2));var newest=CreateClip(l,"new.mp4",8);File.WriteAllText(Path.Combine(path,"unrelated.mp4"),"not-owned");Equal(1,l.EnforceByteLimit(15,new HashSet<Guid>{newest.Metadata.Id}));False(File.Exists(oldest.FullPath));True(File.Exists(newest.FullPath));True(File.Exists(Path.Combine(path,"unrelated.mp4")));}));
+        Test("unlimited retention deletes nothing", () => InLibrary((path, store) =>{var l=new ClipLibrary(path, store);CreateClip(l,"a.mp4",10);Equal(0,l.EnforceLimit(new(){Directory=path,AutoCleanup=true,LimitGb=0}));}));
+        Test("bad sidecar cannot hide healthy clips", () => InLibrary((path, store) => { var l = new ClipLibrary(path, store); CreateClip(l, "a.mp4", 10); File.WriteAllText(Path.Combine(path, "bad.mp4.hunt.json"), "garbage"); Equal(1, l.List().Count); l.Maintain(); Equal(1, l.List().Count); True(File.Exists(Path.Combine(path, "bad.mp4.hunt.json"))); }));
+        Test("clips folder holds only MP4 files through register, rename and delete", () => InLibrary((path, store) =>
+        {
+            var l = new ClipLibrary(path, store); var c = CreateClip(l, "a.mp4", 10);
+            File.WriteAllBytes(c.ThumbnailPath, [1, 2, 3]);
+            Equal("a.mp4", Names(path));
+            False(c.RecordPath.StartsWith(path, StringComparison.OrdinalIgnoreCase));
+            False(c.ThumbnailPath.StartsWith(path, StringComparison.OrdinalIgnoreCase));
+            var r = l.Rename(c, "b.mp4");
+            Equal("b.mp4", Names(path)); Equal(c.ThumbnailPath, r.ThumbnailPath); True(File.Exists(r.ThumbnailPath));
+            l.Delete(r);
+            Equal("", Names(path)); False(File.Exists(r.RecordPath)); False(File.Exists(r.ThumbnailPath));
+            Equal(0, Directory.GetFiles(store, "*", SearchOption.AllDirectories).Length);
+        }));
+        Test("0.1.2 sidecars are adopted into the store and leave the clips folder", () => InLibrary((path, store) =>
+        {
+            var legacy = WriteLegacyClip(path, "old.mp4");
+            var l = new ClipLibrary(path, store);
+            Equal(1, l.List().Count);
+            var report = l.Maintain();
+            Equal(1, report.Adopted); Equal("old.mp4", Names(path));
+            var clip = l.List().Single();
+            Equal(legacy.Id, clip.Metadata.Id); Equal(3L, new FileInfo(clip.ThumbnailPath).Length); True(File.Exists(clip.RecordPath));
+            Equal(0, l.Maintain().Adopted);
+        }));
+        Test("0.1.2 clip stays visible and deletable before maintenance", () => InLibrary((path, store) =>
+        {
+            WriteLegacyClip(path, "old.mp4");
+            var l = new ClipLibrary(path, store);
+            l.Delete(l.List().Single());
+            Equal("", Names(path)); Equal(0, l.List().Count);
+        }));
+        Test("copied clip with a duplicate Id receives a fresh record Id", () => InLibrary((path, store) =>
+        {
+            var first = Path.Combine(path, "First"); var second = Path.Combine(path, "Second");
+            Directory.CreateDirectory(first); Directory.CreateDirectory(second);
+            var original = CreateClip(new ClipLibrary(first, store), "x.mp4", 10);
+            var copy = WriteLegacyClip(second, "x.mp4") with { Id = original.Metadata.Id };
+            File.WriteAllText(Path.Combine(second, "x.mp4") + ".hunt.json", JsonSerializer.Serialize(copy, StudioSettings.JsonOptions));
+            var l = new ClipLibrary(second, store);
+            Equal(1, l.Maintain().Adopted);
+            False(l.List().Single().Metadata.Id == original.Metadata.Id);
+            Equal(original.Metadata.Id, new ClipLibrary(first, store).List().Single().Metadata.Id);
+        }));
+        Test("records follow a renamed clips folder after maintenance", () => InLibrary((path, store) =>
+        {
+            var before = Path.Combine(path, "Clips"); Directory.CreateDirectory(before);
+            var clip = CreateClip(new ClipLibrary(before, store), "a.mp4", 10);
+            var after = Path.Combine(path, "Moved"); Directory.Move(before, after);
+            var l = new ClipLibrary(after, store);
+            Equal(1, l.Maintain().Relocated);
+            Equal(clip.Metadata.Id, l.List().Single().Metadata.Id);
+        }));
+        Test("maintenance prunes records of deleted MP4 files but keeps other clips folders", () => InLibrary((path, store) =>
+        {
+            var first = Path.Combine(path, "First"); var second = Path.Combine(path, "Second");
+            Directory.CreateDirectory(first); Directory.CreateDirectory(second);
+            var lf = new ClipLibrary(first, store); var ls = new ClipLibrary(second, store);
+            var gone = CreateClip(lf, "gone.mp4", 10); File.WriteAllBytes(gone.ThumbnailPath, [1]);
+            var kept = CreateClip(ls, "kept.mp4", 10);
+            File.Delete(gone.FullPath);
+            var report = lf.Maintain();
+            Equal(1, report.Pruned); Equal(0, report.Relocated);
+            False(File.Exists(gone.RecordPath)); False(File.Exists(gone.ThumbnailPath));
+            True(File.Exists(kept.RecordPath)); Equal(1, ls.List().Count);
+        }));
+        Test("thumbnails without a record are removed", () => InLibrary((path, store) =>
+        {
+            var l = new ClipLibrary(path, store); l.Maintain();
+            var orphan = Path.Combine(store, "thumbs", Guid.NewGuid().ToString("D") + ".png");
+            File.WriteAllBytes(orphan, [1]);
+            Equal(1, l.Maintain().Pruned); False(File.Exists(orphan));
+        }));
+        Test("maintenance removes 0.1.2 leftovers of deleted MP4 files and keeps foreign or broken files", () => InLibrary((path, store) =>
+        {
+            WriteLegacyClip(path, "ghost.mp4"); File.Delete(Path.Combine(path, "ghost.mp4"));
+            File.WriteAllText(Path.Combine(path, "bad.mp4.hunt.json"), "garbage");
+            File.WriteAllText(Path.Combine(path, "notes.txt"), "mine");
+            File.WriteAllBytes(Path.Combine(path, "unrelated.mp4"), [1, 2]);
+            var l = new ClipLibrary(path, store);
+            Equal(1, l.Maintain().Pruned);
+            Equal("bad.mp4.hunt.json,notes.txt,unrelated.mp4", Names(path)); Equal(0, l.List().Count);
+        }));
+        Test("stale temporary files are removed and fresh ones are kept", () => InLibrary((path, store) =>
+        {
+            var l = new ClipLibrary(path, store); l.Maintain();
+            var stale = Path.Combine(store, "records", "old.json.1.tmp"); File.WriteAllText(stale, "x"); File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddHours(-2));
+            var fresh = Path.Combine(store, "records", "new.json.2.tmp"); File.WriteAllText(fresh, "x");
+            l.Maintain();
+            False(File.Exists(stale)); True(File.Exists(fresh));
+        }));
+        Test("0.1.2 copy with a duplicate Id cannot delete the original's record or thumbnail", () => InLibrary((path, store) =>
+        {
+            var first = Path.Combine(path, "First"); var second = Path.Combine(path, "Second");
+            Directory.CreateDirectory(first); Directory.CreateDirectory(second);
+            var lf = new ClipLibrary(first, store);
+            var original = CreateClip(lf, "x.mp4", 10); File.WriteAllBytes(original.ThumbnailPath, [4, 5]);
+            var copy = WriteLegacyClip(second, "x.mp4") with { Id = original.Metadata.Id };
+            File.WriteAllText(Path.Combine(second, "x.mp4") + ".hunt.json", JsonSerializer.Serialize(copy, StudioSettings.JsonOptions));
+            var ls = new ClipLibrary(second, store);
+            ls.Delete(ls.List().Single());             // worst case: no maintenance before the delete
+            True(File.Exists(original.RecordPath)); True(File.Exists(original.ThumbnailPath));
+            Equal(original.Metadata.Id, lf.List().Single().Metadata.Id); Equal("", Names(second));
+        }));
+        Test("renaming a 0.1.2 copy with a duplicate Id leaves the original record alone", () => InLibrary((path, store) =>
+        {
+            var first = Path.Combine(path, "First"); var second = Path.Combine(path, "Second");
+            Directory.CreateDirectory(first); Directory.CreateDirectory(second);
+            var lf = new ClipLibrary(first, store);
+            var original = CreateClip(lf, "x.mp4", 10);
+            var copy = WriteLegacyClip(second, "x.mp4") with { Id = original.Metadata.Id };
+            File.WriteAllText(Path.Combine(second, "x.mp4") + ".hunt.json", JsonSerializer.Serialize(copy, StudioSettings.JsonOptions));
+            var ls = new ClipLibrary(second, store);
+            var renamed = ls.Rename(ls.List().Single(), "y.mp4");
+            False(renamed.Metadata.Id == original.Metadata.Id); True(File.Exists(renamed.RecordPath));
+            Equal(original.Metadata.Id, lf.List().Single().Metadata.Id); True(File.Exists(original.RecordPath));
+            Equal("y.mp4", Names(second));
+        }));
+        Test("rename refuses a name still used by a 0.1.2 sidecar", () => InLibrary((path, store) =>
+        {
+            var l = new ClipLibrary(path, store); var c = CreateClip(l, "a.mp4", 10);
+            File.WriteAllText(Path.Combine(path, "b.mp4.hunt.json"), "{}");
+            Throws<IOException>(() => l.Rename(c, "b.mp4"));
+            True(File.Exists(c.FullPath)); Equal("a.mp4,b.mp4.hunt.json", Names(path));
+        }));
 
         await TestAsync("framing supports short reads and big endian length", async()=> { var bus=Join(); using var output=new MemoryStream(); await BusFraming.WriteAsync(output,bus,default); var bytes=output.ToArray(); Equal(bus.CalculateSize(),(int)BinaryPrimitives.ReadUInt32BigEndian(bytes)); using var fragmented=new ShortReadStream(bytes); Equal("join",(await BusFraming.ReadAsync(fragmented,default))!.Uniqueid); });
         await TestAsync("clean EOF is not malformed input",async()=>{using var stream=new MemoryStream();True(await BusFraming.ReadAsync(stream,default) is null);});
@@ -103,11 +227,11 @@ public static partial class Program
             for (int i=0; i<256; i++) p.Register(Event(i.ToString(),100));
             Throws<InvalidOperationException>(() => p.Register(Event("too-many",100)));
         });
-        Test("library accepts uppercase MP4 extension", () => InTemp(path => { var l=new ClipLibrary(path); CreateClip(l,"clip.MP4",8); Equal(1,l.List().Count); }));
-        Test("invalid metadata duration is excluded safely", () => InTemp(path =>
+        Test("library accepts uppercase MP4 extension", () => InLibrary((path, store) => { var l=new ClipLibrary(path,store); CreateClip(l,"clip.MP4",8); Equal(1,l.List().Count); }));
+        Test("invalid metadata duration is excluded safely", () => InLibrary((path, store) =>
         {
-            var l = new ClipLibrary(path); var c = CreateClip(l,"a.mp4",8);
-            File.WriteAllText(c.SidecarPath, JsonSerializer.Serialize(c.Metadata with { DurationSeconds = -1 }));
+            var l = new ClipLibrary(path, store); var c = CreateClip(l,"a.mp4",8);
+            File.WriteAllText(c.RecordPath, JsonSerializer.Serialize(new { Folder = l.Root, Clip = c.Metadata with { DurationSeconds = -1 } }, StudioSettings.JsonOptions));
             Equal(0,l.List().Count); True(File.Exists(c.FullPath));
         }));
         RuntimeRegressionTests();
@@ -124,6 +248,25 @@ public static partial class Program
     private static PacketRingBuffer Filled() {var ring=new PacketRingBuffer(60,10000);for(int i=0;i<20;i++){ring.Add(Video(i,i%2==0));ring.Add(Audio(i));}return ring;}
     private static HighlightEvent Event(string id,int second)=>new("s",id,"g","HUNTER_KILLED",second*1_000_000L,-20000,5000);
     private static void InTemp(Action<string> test) {var path=Path.Combine(Path.GetTempPath(),"HuntReplay-test-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(path);try{test(path);}finally{Directory.Delete(path,true);}}
+    private static void InLibrary(Action<string, string> test)
+    {
+        var id = Guid.NewGuid().ToString("N");
+        var path = Path.Combine(Path.GetTempPath(), "HuntReplay-test-" + id);
+        var store = Path.Combine(Path.GetTempPath(), "HuntReplay-test-store-" + id);
+        Directory.CreateDirectory(path);
+        try { test(path, store); }
+        finally { Directory.Delete(path, true); if (Directory.Exists(store)) Directory.Delete(store, true); }
+    }
+    private static string Names(string directory) => string.Join(",", Directory.GetFiles(directory).Select(f => Path.GetFileName(f)).OrderBy(n => n, StringComparer.Ordinal));
+    private static ClipMetadata WriteLegacyClip(string folder, string name)
+    {
+        var path = Path.Combine(folder, name);
+        using (var file = File.Create(path)) file.SetLength(12);
+        var metadata = new ClipMetadata { FileName = name, EventTag = "HUNTER_KILLED", DurationSeconds = 9, CreatedAt = DateTimeOffset.Now.AddHours(-1) };
+        File.WriteAllText(path + ".hunt.json", JsonSerializer.Serialize(metadata, StudioSettings.JsonOptions));
+        File.WriteAllBytes(path + ".thumb.png", [9, 8, 7]);
+        return metadata;
+    }
     private static LibraryClip CreateClip(ClipLibrary library,string name,long size,DateTimeOffset? when=null)
     {var path=Path.Combine(library.Root,name);using(var file=File.Create(path))file.SetLength(size);return library.Register(path,new(){FileName=name,EventTag="TEST",CreatedAt=when??DateTimeOffset.Now,DurationSeconds=1});}
     private static BusMessage Join()=>new(){Uniqueid="join",SourceSystem="Hunt1896",SourceModule="GfeSDK",Joined=true};

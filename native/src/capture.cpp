@@ -1,4 +1,6 @@
 #include "common.h"
+#include <winrt/Windows.Foundation.Metadata.h>
+#include <winrt/Windows.Security.Authorization.AppCapabilityAccess.h>
 
 namespace hr {
 void validate(const hr_config& c) {
@@ -76,6 +78,57 @@ void Session::stop() {
     if (worker.joinable()) { worker.request_stop(); worker.join(); }
     running = false;
 }
+namespace {
+// The capture thread never waits longer than this for Windows to answer the consent request.
+constexpr auto border_consent_timeout = std::chrono::seconds(3);
+
+const char* access_name(winrt::Windows::Security::Authorization::AppCapabilityAccess::AppCapabilityAccessStatus status) {
+    using Status = winrt::Windows::Security::Authorization::AppCapabilityAccess::AppCapabilityAccessStatus;
+    switch (status) {
+        case Status::Allowed: return "Allowed";
+        case Status::DeniedByUser: return "DeniedByUser";
+        case Status::DeniedBySystem: return "DeniedBySystem";
+        case Status::NotDeclaredByApp: return "NotDeclaredByApp";
+        case Status::UserPromptRequired: return "UserPromptRequired";
+        default: return "unknown status";
+    }
+}
+
+// The official, consent-based request for borderless capture. It sets IsBorderRequired(false) only when Windows
+// answers Allowed. Every other outcome keeps the OS indicator. The function never throws and never bypasses the answer.
+std::string request_borderless(winrt::Windows::Graphics::Capture::GraphicsCaptureSession session) {
+    using Status = winrt::Windows::Security::Authorization::AppCapabilityAccess::AppCapabilityAccessStatus;
+    const std::string retained = "OS capture indicator is retained: ";
+    try {
+        if (!winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(
+                L"Windows.Graphics.Capture.GraphicsCaptureSession", L"IsBorderRequired"))
+            return retained + "this Windows build has no GraphicsCaptureSession.IsBorderRequired.";
+        auto answer = std::make_shared<std::promise<Status>>();
+        auto pending = answer->get_future();
+        std::thread([answer] {
+            try {
+                Apartment apartment;
+                answer->set_value(winrt::Windows::Graphics::Capture::GraphicsCaptureAccess::RequestAccessAsync(
+                    winrt::Windows::Graphics::Capture::GraphicsCaptureAccessKind::Borderless).get());
+            } catch (...) {
+                answer->set_exception(std::current_exception());
+            }
+        }).detach();
+        if (pending.wait_for(border_consent_timeout) != std::future_status::ready)
+            return retained + "Windows did not answer the consent request within 3 seconds.";
+        const Status status = pending.get();
+        if (status != Status::Allowed)
+            return retained + "Windows answered " + access_name(status) + " to the consent request.";
+        session.IsBorderRequired(false);
+        return "Windows granted borderless capture by consent.";
+    } catch (const winrt::hresult_error& error) {
+        return retained + "consent request failed: " + winrt::to_string(error.message()) + ".";
+    } catch (const std::exception& error) {
+        return retained + "consent request failed: " + error.what() + ".";
+    }
+}
+} // namespace
+
 void Session::capture(std::stop_token stop, std::promise<void> ready) {
     bool signaled = false;
     namespace Capture = winrt::Windows::Graphics::Capture;
@@ -115,6 +168,7 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
             GraphicsDirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, size);
         capture_session = pool.CreateCaptureSession(item);
         capture_session.IsCursorCaptureEnabled(false);
+        const std::string border = request_borderless(capture_session);
         auto closed = std::make_shared<std::atomic<bool>>(false);
         auto closed_handler = item.Closed(winrt::auto_revoke, [closed](auto&&, auto&&) { *closed = true; });
         epoch_100ns = qpc_100ns();
@@ -132,9 +186,7 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
         audio->start();
         capture_session.StartCapture();
         running = true; ready.set_value(); signaled = true;
-        log(0, "WGC + D3D11 NV12 + " + utf8(description) + " + WASAPI started. SDR capture; OS capture indicator is retained: "
-            "Windows removes it only for packaged apps with the graphicsCaptureWithoutBorder capability and user consent. "
-            "Recording continues with the indicator.");
+        log(0, "WGC + D3D11 NV12 + " + utf8(description) + " + WASAPI started. SDR capture. " + border);
         ComPtr<ID3D11Texture2D> last_texture;
         int input_width = 0, input_height = 0;
         int64_t last_pts = -1;

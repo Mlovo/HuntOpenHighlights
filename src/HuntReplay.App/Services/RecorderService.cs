@@ -15,6 +15,7 @@ internal sealed class RecorderService : IAsyncDisposable
     private readonly object exportGate = new();
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private readonly StudioLog log;
+    private readonly string libraryRoot;
     private readonly CancellationTokenSource stop = new();
     private readonly Channel<ExportJob> exports = Channel.CreateBounded<ExportJob>(new BoundedChannelOptions(2)
     { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
@@ -35,9 +36,9 @@ internal sealed class RecorderService : IAsyncDisposable
     public event Action? Changed;
     private sealed record ExportJob(NativeCaptureEngine Engine, ReplaySnapshot Snapshot, ClipPlan Plan, StudioSettings Settings);
 
-    public RecorderService(StudioSettings settings, StudioLog log)
+    public RecorderService(StudioSettings settings, StudioLog log, string libraryRoot)
     {
-        this.settings = settings.Clone(); this.log = log;
+        this.settings = settings.Clone(); this.log = log; this.libraryRoot = libraryRoot;
         timer = Task.Run(TimerLoopAsync);
         exporter = Task.Run(ExportLoopAsync);
     }
@@ -243,7 +244,7 @@ internal sealed class RecorderService : IAsyncDisposable
             string? temp = null;
             try
             {
-                var library = new ClipLibrary(job.Settings.Storage.Directory);
+                var library = new ClipLibrary(job.Settings.Storage.Directory, libraryRoot);
                 var now = DateTimeOffset.Now;
                 var final = library.NewPath(job.Settings.Storage.FileNameTemplate, job.Plan.EventTag, now);
                 ClipLibrary.RequireDiskSpace(final, job.Snapshot.Bytes);

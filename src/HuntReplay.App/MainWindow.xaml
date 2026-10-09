@@ -24,7 +24,7 @@
           </Border>
           <Button Content="Открыть папку клипов  ↗" Style="{StaticResource QuietButton}" Command="{Binding OpenFolderCommand}" HorizontalContentAlignment="Left"/>
           <Border Height="1" Background="{StaticResource Border}" Margin="12,16"/>
-          <Grid Margin="12,0"><TextBlock Text="STUDIO  /  0.1.2" FontSize="9" Foreground="{StaticResource Muted}"/><TextBlock Text="LOCAL" FontSize="9" Foreground="{StaticResource Accent}" HorizontalAlignment="Right"/></Grid>
+          <Grid Margin="12,0"><TextBlock Text="STUDIO  /  0.1.3" FontSize="9" Foreground="{StaticResource Muted}"/><TextBlock Text="LOCAL" FontSize="9" Foreground="{StaticResource Accent}" HorizontalAlignment="Right"/></Grid>
         </StackPanel>
       </DockPanel>
     </Border>
