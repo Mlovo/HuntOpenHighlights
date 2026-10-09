@@ -20,6 +20,8 @@ public sealed class HighlightsSession
     private readonly HashSet<string> closedGroups = new(StringComparer.Ordinal);
     private bool joined;
     private bool authorized;
+    private bool controlIdentifierLogged;
+    private int sdkSequence, currentOrdinal;
     private string joinedSystem = "", joinedModule = "";
     public string SessionId { get; } = Guid.NewGuid().ToString("N");
     public string? GameName { get; private set; }
@@ -52,7 +54,14 @@ public sealed class HighlightsSession
             request = message.Request;
         }
         string kind = bus.Joined ? "JOIN" : "SDK/" + request!.RequestCase;
-        CheckText(bus.Uniqueid, 128, $"BusMessage.uniqueid ({kind})");
+        // Opaque correlation token: bounded and well-formed, never normalized. Control characters
+        // (the field report had a 37-unit token) are echoed exactly so the game can match replies.
+        CheckCorrelationId(bus.Uniqueid, kind);
+        if (!controlIdentifierLogged && bus.Uniqueid.Any(char.IsControl))
+        {
+            controlIdentifierLogged = true;
+            log($"IPC · BusMessage.uniqueid содержит управляющие символы ({DescribeControls(bus.Uniqueid)}); значение передано без изменений");
+        }
         // Routing identity can be omitted on subsequent messages on an already joined pipe.
         CheckText(bus.SourceSystem, 256, $"BusMessage.source_system ({kind})", allowEmpty: !bus.Joined);
         CheckText(bus.SourceModule, 256, $"BusMessage.source_module ({kind})", allowEmpty: !bus.Joined);
@@ -73,8 +82,10 @@ public sealed class HighlightsSession
         }
         else if (request is not null)
         {
+            // Per-session ordinal correlates request and refusal lines without printing the token.
+            var ordinal = currentOrdinal = ++sdkSequence;
             if (request.RequestCase != SDKIPCRequest.RequestOneofCase.IsClientAliveRequest)
-                log($"IPC SDK · {request.RequestCase} · PID {clientPid}");
+                log($"IPC SDK #{ordinal} · {request.RequestCase} · PID {clientPid}");
             currentRequestId = bus.Uniqueid;
             SDKIPCResponse response;
             try { response = Handle(request); }
@@ -83,7 +94,7 @@ public sealed class HighlightsSession
                 // The SDK call is correlatable: reject it without tearing down a healthy pipe.
                 response = Failure(ex.Message);
             }
-            if (response.Retval != 0) log($"IPC отказ · {request.RequestCase} · {response.Retstatus}");
+            if (response.Retval != 0) log($"IPC отказ #{ordinal} · {request.RequestCase} · {response.Retstatus}");
             var envelope = ReplyEnvelope(bus, "NvNode", "SDKAPI");
             envelope.Generic = new BusMessage.Types.Generic
             {
@@ -186,7 +197,12 @@ public sealed class HighlightsSession
                 CheckText(video.GroupId, 256, "setVideoHighlightRequest.groupId");
                 if (!groups.ContainsKey(video.GroupId)) return Failure("GROUP_NOT_FOUND");
                 if (!definitions.Contains(video.HighlightId)) return Failure("HIGHLIGHT_NOT_CONFIGURED");
-                if (!enabled(video.HighlightId)) break; // A user-disabled event is a valid no-op.
+                if (!enabled(video.HighlightId))
+                {
+                    // A user-disabled event is a valid no-op; log it so a missing clip is traceable.
+                    log($"IPC SDK #{currentOrdinal} · {Clean(video.HighlightId)} отключено в настройках; клип не запланирован");
+                    break;
+                }
                 // baseTimeStamp has an SDK-specific clock domain; never compare it to Unix time/QPC.
                 var evt = new HighlightEvent(SessionId + ":" + groupEpochs[video.GroupId], currentRequestId, video.GroupId, video.HighlightId,
                     nowUs(), video.StartDelta, video.EndDelta);
@@ -249,6 +265,23 @@ public sealed class HighlightsSession
     }
 
     private static SDKIPCResponse Failure(string status) => new() { Retval = -1, Retstatus = status };
+    // BusMessage.uniqueid: 1–128 UTF-16 code units (unchanged limit). Control characters are allowed
+    // because the token is opaque; only unpaired surrogates are refused, since they have no UTF-8 form.
+    private void CheckCorrelationId(string value, string kind)
+    {
+        var field = $"BusMessage.uniqueid ({kind})";
+        if (value.Length == 0)
+            throw new InvalidDataException($"Invalid IPC identifier: {field} is empty.");
+        if (value.Length > 128)
+            throw new InvalidDataException($"Invalid IPC identifier: {field} length {value.Length} exceeds 128.");
+        for (int i = 0; i < value.Length; i++)
+        {
+            if (char.IsHighSurrogate(value[i]) && i + 1 < value.Length && char.IsLowSurrogate(value[i + 1])) { i++; continue; }
+            if (char.IsSurrogate(value[i]))
+                throw new InvalidDataException($"Invalid IPC identifier: {field} is not well-formed UTF-16 (U+{(int)value[i]:X4}@{i}).");
+        }
+    }
+
     private static void CheckText(string value, int limit, string field, bool allowEmpty = false)
     {
         if (!allowEmpty && string.IsNullOrEmpty(value))
@@ -256,7 +289,22 @@ public sealed class HighlightsSession
         if (value.Length > limit)
             throw new InvalidDataException($"Invalid IPC identifier: {field} length {value.Length} exceeds {limit}.");
         if (value.Any(char.IsControl))
-            throw new InvalidDataException($"Invalid IPC identifier: {field} contains control characters (length {value.Length}).");
+            throw new InvalidDataException($"Invalid IPC identifier: {field} contains control characters ({DescribeControls(value)}).");
+    }
+
+    // Diagnostics name control characters by code point and index only; raw identifiers are never printed.
+    private static string DescribeControls(string value)
+    {
+        var found = new List<string>();
+        int total = 0;
+        for (int i = 0; i < value.Length; i++)
+        {
+            if (!char.IsControl(value[i])) continue;
+            total++;
+            if (found.Count < 4) found.Add($"U+{(int)value[i]:X4}@{i}");
+        }
+        if (total > found.Count) found.Add($"+{total - found.Count} more");
+        return string.Join(", ", found);
     }
     private static string Clean(string value) => new(value.Where(c => !char.IsControl(c)).Take(256).ToArray());
 }

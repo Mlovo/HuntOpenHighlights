@@ -3,15 +3,19 @@
 
 namespace hr {
 namespace {
-struct MonitorContext { hr_device_callback callback; void* user; };
+struct MonitorContext { hr_device_callback callback; void* user; int index; };
 BOOL CALLBACK monitor_callback(HMONITOR monitor, HDC, LPRECT, LPARAM parameter) {
     auto* context = reinterpret_cast<MonitorContext*>(parameter);
     MONITORINFOEXW info{}; info.cbSize = sizeof(info);
     if (!GetMonitorInfoW(monitor, &info)) return TRUE;
-    std::wstring label = std::wstring(info.szDevice) + L" · " + std::to_wstring(info.rcMonitor.right - info.rcMonitor.left) +
-        L" × " + std::to_wstring(info.rcMonitor.bottom - info.rcMonitor.top);
-    hr_device item{0, (info.dwFlags & MONITORINFOF_PRIMARY) != 0, 0,
-        reinterpret_cast<uint64_t>(monitor), info.szDevice, label.c_str()};
+    // info.szDevice (\\.\DISPLAYn) is the stable ID kept in settings and capture config.
+    // The caption is for people: ordinal in this enumeration, size, and whether it is primary.
+    const bool primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0;
+    const auto width = info.rcMonitor.right - info.rcMonitor.left;
+    const auto height = info.rcMonitor.bottom - info.rcMonitor.top;
+    std::wstring label = L"Монитор " + std::to_wstring(++context->index) + L" · " + std::to_wstring(width) +
+        L" × " + std::to_wstring(height) + (primary ? L" · основной" : L"");
+    hr_device item{0, primary, 0, reinterpret_cast<uint64_t>(monitor), info.szDevice, label.c_str()};
     context->callback(context->user, &item);
     return TRUE;
 }
@@ -41,7 +45,7 @@ void endpoints(IMMDeviceEnumerator* enumerator, EDataFlow flow, int kind, hr_dev
 }
 void enumerate(hr_device_callback callback, void* user) {
     Apartment apartment;
-    MonitorContext context{callback, user};
+    MonitorContext context{callback, user, 0};
     if (!EnumDisplayMonitors(nullptr, nullptr, monitor_callback, reinterpret_cast<LPARAM>(&context)))
         check(HRESULT_FROM_WIN32(GetLastError()));
     ComPtr<IDXGIFactory1> factory; check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));

@@ -1,0 +1,57 @@
+{
+  "synthetic": true,
+  "source": "tools/GenerateProtocolFixtures.py using proto/BusMessage_pb2.py and proto/sdk_pb2.py",
+  "note": "Synthetic regression input, not a captured game trace.",
+  "frames": [
+    {
+      "name": "join",
+      "note": "plain 36-unit UUID-shaped token",
+      "base64": "CiQzZjJiOGMxZS01ZDRhLTRlNmYtOWE3Yi0xYzJkM2U0ZjVhNmISCEh1bnQxODk2GgZHZmVTREsoAQ=="
+    },
+    {
+      "name": "create",
+      "note": "37 units: UUID plus U+0000 at index 36 (field-report shape)",
+      "base64": "CiUzZjJiOGMxZS01ZDRhLTRlNmYtOWE3Yi0xYzJkM2U0ZjVhNmIAEghIdW50MTg5NhoGR2ZlU0RLogEsCAESKAomCAEQACgBmgEdCgRIdW50ECoiE0h1bnQ6IFNob3dkb3duIDE4OTY="
+    },
+    {
+      "name": "configure",
+      "note": "U+0001 at index 36",
+      "base64": "CiUzZjJiOGMxZS01ZDRhLTRlNmYtOWE3Yi0xYzJkM2U0ZjVhNmIBEghIdW50MTg5NhoGR2ZlU0RLogExCAESLQorCAEQACgBggEiGg8KDUhVTlRFUl9LSUxMRUQaDwoNUExBWUVSX0RPV05FRA=="
+    },
+    {
+      "name": "open",
+      "note": "U+001F at index 0",
+      "base64": "CiUfM2YyYjhjMWUtNWQ0YS00ZTZmLTlhN2ItMWMyZDNlNGY1YTZiEghIdW50MTg5NhoGR2ZlU0RLogEaCAESFgoUCAEQACgBWgwKCm1hdGNoLTE4OTY="
+    },
+    {
+      "name": "player-downed",
+      "note": "U+007F at index 18 (inside the token)",
+      "base64": "CiUzZjJiOGMxZS01ZDRhLTRlNmZ/LTlhN2ItMWMyZDNlNGY1YTZiEghIdW50MTg5NhoGR2ZlU0RLogE6CAESNgo0CAEQACgBciwSCm1hdGNoLTE4OTYaDVBMQVlFUl9ET1dORUQg4OP+////////ASiIJzDoBw=="
+    },
+    {
+      "name": "hunter-killed",
+      "note": "U+0085 (C1 control) at index 36",
+      "base64": "CiYzZjJiOGMxZS01ZDRhLTRlNmYtOWE3Yi0xYzJkM2U0ZjVhNmLChRIISHVudDE4OTYaBkdmZVNES6IBOggBEjYKNAgBEAAoAXIsEgptYXRjaC0xODk2Gg1IVU5URVJfS0lMTEVEIODj/v///////wEoiCcw0A8="
+    },
+    {
+      "name": "hunter-killed-retransmit",
+      "note": "byte-identical retransmission of hunter-killed",
+      "base64": "CiYzZjJiOGMxZS01ZDRhLTRlNmYtOWE3Yi0xYzJkM2U0ZjVhNmLChRIISHVudDE4OTYaBkdmZVNES6IBOggBEjYKNAgBEAAoAXIsEgptYXRjaC0xODk2Gg1IVU5URVJfS0lMTEVEIODj/v///////wEoiCcw0A8="
+    },
+    {
+      "name": "config",
+      "note": "U+0002 at index 36",
+      "base64": "CiUzZjJiOGMxZS01ZDRhLTRlNmYtOWE3Yi0xYzJkM2U0ZjVhNmICEghIdW50MTg5NhoGR2ZlU0RLogEPCAESCwoJCAEQACgBugEA"
+    },
+    {
+      "name": "count",
+      "note": "U+0009 (tab) at index 36",
+      "base64": "CiUzZjJiOGMxZS01ZDRhLTRlNmYtOWE3Yi0xYzJkM2U0ZjVhNmIJEghIdW50MTg5NhoGR2ZlU0RLogEbCAESFwoVCAEQACgBsgEMCgptYXRjaC0xODk2"
+    },
+    {
+      "name": "close",
+      "note": "U+001B at index 36",
+      "base64": "CiUzZjJiOGMxZS01ZDRhLTRlNmYtOWE3Yi0xYzJkM2U0ZjVhNmIbEghIdW50MTg5NhoGR2ZlU0RLogEaCAESFgoUCAEQACgBYgwKCm1hdGNoLTE4OTY="
+    }
+  ]
+}

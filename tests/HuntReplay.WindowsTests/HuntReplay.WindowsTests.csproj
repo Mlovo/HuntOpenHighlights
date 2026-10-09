@@ -11,5 +11,7 @@
     <Compile Include="../../src/HuntReplay.App/Interop/DeviceOption.cs" Link="Production/DeviceOption.cs" />
     <Compile Include="../../src/HuntReplay.App/ViewModels/ObservableObject.cs" Link="Production/ObservableObject.cs" />
     <Compile Include="../../src/HuntReplay.App/ViewModels/DeviceSelectionViewModel.cs" Link="Production/DeviceSelectionViewModel.cs" />
+    <!-- Converters referenced by the production Dark.xaml; the theme is parsed in-process by ComboBoxPresentationTests. -->
+    <Compile Include="../../src/HuntReplay.App/Views/Converters.cs" Link="Production/Converters.cs" />
   </ItemGroup>
 </Project>

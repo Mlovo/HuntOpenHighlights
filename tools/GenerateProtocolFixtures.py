@@ -83,3 +83,67 @@ control("keepalive", m)
 path = ROOT / "tests/HuntReplay.Tests/Fixtures/python-control-wire.json"
 path.write_text(json.dumps(controls, indent=2)+"\n", encoding="utf-8")
 print(path.relative_to(ROOT))
+
+# Synthetic regression input for BusMessage.uniqueid, NOT a captured game trace. The field report
+# showed a 37-unit correlation token (UUID-shaped text plus one control character). The token is
+# opaque: every control character below must survive serialization and be echoed exactly. Each
+# request has its own token, so the retransmitted frame (byte-identical) must hit the reply cache.
+UUID = "3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b"
+synthetic = []
+def synthetic_frame(name, uniqueid, note, request=None, joined=False):
+    message = bus.BusMessage(uniqueid=uniqueid, source_system="Hunt1896", source_module="GfeSDK")
+    if joined:
+        message.joined = True
+    if request is not None:
+        request.version_major = 1
+        request.version_minor = 0
+        request.component = sdk.SDKComponent_SHARE
+        message.generic.type = 1
+        message.generic.data = sdk.SDKIPCMessage(request=request).SerializeToString()
+    data = message.SerializeToString()
+    synthetic.append({"name": name, "note": note, "base64": base64.b64encode(data).decode("ascii")})
+    return data
+
+synthetic_frame("join", UUID, "plain 36-unit UUID-shaped token", joined=True)
+r = sdk.SDKIPCRequest()
+r.createSDKInstanceRequest.client = "Hunt"
+r.createSDKInstanceRequest.clientPID = 42
+r.createSDKInstanceRequest.gameName = "Hunt: Showdown 1896"
+synthetic_frame("create", UUID + "\x00", "37 units: UUID plus U+0000 at index 36 (field-report shape)", r)
+r = sdk.SDKIPCRequest()
+for id in ("HUNTER_KILLED", "PLAYER_DOWNED"):
+    r.configureHighlightsRequest.highlightTable.add(highlightId=id)
+synthetic_frame("configure", UUID + "\x01", "U+0001 at index 36", r)
+r = sdk.SDKIPCRequest(); r.openGroupRequest.groupId = "match-1896"
+synthetic_frame("open", "\x1f" + UUID, "U+001F at index 0", r)
+r = sdk.SDKIPCRequest()
+r.setVideoHighlightRequest.groupId = "match-1896"
+r.setVideoHighlightRequest.highlightId = "PLAYER_DOWNED"
+r.setVideoHighlightRequest.startDelta = -20000
+r.setVideoHighlightRequest.endDelta = 5000
+r.setVideoHighlightRequest.baseTimeStamp = 1000
+synthetic_frame("player-downed", UUID[:18] + "\x7f" + UUID[18:], "U+007F at index 18 (inside the token)", r)
+r = sdk.SDKIPCRequest()
+r.setVideoHighlightRequest.groupId = "match-1896"
+r.setVideoHighlightRequest.highlightId = "HUNTER_KILLED"
+r.setVideoHighlightRequest.startDelta = -20000
+r.setVideoHighlightRequest.endDelta = 5000
+r.setVideoHighlightRequest.baseTimeStamp = 2000
+hunter = synthetic_frame("hunter-killed", UUID + "\x85", "U+0085 (C1 control) at index 36", r)
+synthetic.append({"name": "hunter-killed-retransmit", "note": "byte-identical retransmission of hunter-killed",
+                  "base64": base64.b64encode(hunter).decode("ascii")})
+r = sdk.SDKIPCRequest(); r.getUserConfigRequest.SetInParent()
+synthetic_frame("config", UUID + "\x02", "U+0002 at index 36", r)
+r = sdk.SDKIPCRequest(); r.getNumberOfHighlightsInGroupRequest.groupId = "match-1896"
+synthetic_frame("count", UUID + "\t", "U+0009 (tab) at index 36", r)
+r = sdk.SDKIPCRequest(); r.closeGroupRequest.groupId = "match-1896"
+synthetic_frame("close", UUID + "\x1b", "U+001B at index 36", r)
+document = {
+    "synthetic": True,
+    "source": "tools/GenerateProtocolFixtures.py using proto/BusMessage_pb2.py and proto/sdk_pb2.py",
+    "note": "Synthetic regression input, not a captured game trace.",
+    "frames": synthetic,
+}
+path = ROOT / "tests/HuntReplay.Tests/Fixtures/python-synthetic-uniqueid-wire.json"
+path.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+print(path.relative_to(ROOT))

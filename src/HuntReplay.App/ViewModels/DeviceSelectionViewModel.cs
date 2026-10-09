@@ -6,6 +6,8 @@ namespace HuntReplay.App.ViewModels;
 /// An empty device ID means Windows default. A null SelectedValue is a transient
 /// Selector reset during ItemsSource changes, NOT a request to erase the saved ID.
 /// Keep even disconnected IDs selectable so refresh never silently picks another device.
+/// The saved Windows ID stays in settings and in DeviceOption.Id, but it is never shown as text:
+/// monitor paths and audio endpoint GUIDs are not user-facing captions.
 /// </summary>
 internal sealed class DeviceSelectionViewModel : ObservableObject
 {
@@ -25,6 +27,10 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
 
     public IReadOnlyList<DeviceOption> Options { get => options; private set => Set(ref options, value); }
 
+    private string UnavailableCaption => kind == 0
+        ? "Недоступно · сохранённый монитор не подключён"
+        : "Недоступно · сохранённое устройство не подключено";
+
     public string? SelectedId
     {
         get => refreshing ? null : readId();
@@ -42,7 +48,7 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
         var replacement = new List<DeviceOption> { new(kind, "", defaultLabel) };
         replacement.AddRange(devices.Where(d => d.Kind == kind && !string.IsNullOrEmpty(d.Id)));
         if (selected.Length > 0 && replacement.All(d => d.Id != selected))
-            replacement.Add(new(kind, selected, "Недоступно · сохранённое устройство: " + selected));
+            replacement.Add(new(kind, selected, UnavailableCaption));
         refreshing = true;
         try
         {

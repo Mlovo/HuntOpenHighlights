@@ -111,6 +111,8 @@ public static partial class Program
             Equal(0,l.List().Count); True(File.Exists(c.FullPath));
         }));
         RuntimeRegressionTests();
+        IpcCorrelationTests();
+        DeviceSelectionTests();
         Console.WriteLine($"\n{passed} passed; {failed} failed.");
         return failed == 0 ? 0 : 1;
     }
