@@ -29,6 +29,12 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length >= 2 && e.Args[0] == "--nvidia-service-keeper" && int.TryParse(e.Args[1], out int mainPid))
+        {
+            NvidiaServiceManager.RunKeeper(mainPid);
+            Shutdown(0);
+            return;
+        }
         if (e.Args.Contains("--install-shim") || e.Args.Contains("--uninstall-shim"))
         {
             try
@@ -101,6 +107,7 @@ public partial class App : Application
             if (startInTray) { window.ShowInTaskbar = false; window.WindowState = WindowState.Minimized; }
             window.Show();
             if (startInTray) window.Hide();
+            await NvidiaServiceManager.EnsureServicePausedAsync(log);
             pipe.Start();
             await model.InitializeAsync(window);
             if (storageWarning is not null) model.Error(new IOException(storageWarning));
@@ -147,6 +154,7 @@ public partial class App : Application
         {
             if (tray is not null) { tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Icon?.Dispose(); tray.Dispose(); }
             activationWait?.Unregister(null); activate?.Dispose(); instance?.Dispose();
+            NvidiaServiceManager.RestoreServices(log);
             if (log is not null) await log.DisposeAsync();
             if (window is not null) { window.CanClose = true; window.Close(); }
             Shutdown(code);

@@ -19,7 +19,7 @@ public partial class SetupWizard : Window
         }
         if (status.NvidiaActive)
         {
-            StatusText.Text = "Обнаружена активная служба NVIDIA App (NvContainer). Перехватчик HuntReplay не будет запущен, пока работает служба NVIDIA, чтобы не нарушать её работу.";
+            StatusText.Text = "Обнаружена служба NVIDIA (NvContainer). HuntReplay автоматически приостановит её на время работы и возобновит при выходе.";
         }
         if (status.Ready) InstallButton.Content = "Всё готово · продолжить";
         Closing += (_, args) => { if (installing) args.Cancel = true; };

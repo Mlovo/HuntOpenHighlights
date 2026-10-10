@@ -25,12 +25,6 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
     public void Start()
     {
         if (listener is not null) return;
-        if (SelfInstaller.IsNvidiaActive())
-        {
-            Failure = "Обнаружена работающая служба NVIDIA (NvContainer). Перехватчик отключён, чтобы избежать конфликтов. Отключите Highlights в NVIDIA App / закройте службу NVIDIA, если хотите использовать автозапись HuntReplay.";
-            log.Write(Failure, "WARN");
-            return;
-        }
         try
         {
             // FirstPipeInstance detects NVIDIA/Python/another user's server instead of hijacking it.
@@ -41,7 +35,14 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Failure = "Канал занят другой программой (NVIDIA App / старый сервер). Перехватчик отключён, чтобы не нарушать работу системы. " + ex.Message;
+            if (SelfInstaller.IsNvidiaActive())
+            {
+                Failure = "Канал занят активной службой NVIDIA (NvContainer). Разрешите её временную приостановку при запуске или отключите Highlights в оверлее NVIDIA.";
+            }
+            else
+            {
+                Failure = "Канал занят другой программой (NVIDIA App / старый сервер). Перехватчик отключён, чтобы не нарушать работу системы. " + ex.Message;
+            }
             log.Write(Failure, "ERROR");
         }
     }
