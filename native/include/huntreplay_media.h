@@ -38,6 +38,7 @@ struct hr_device {
 };
 struct hr_session;
 struct hr_mux;
+struct hr_player;
 typedef void (HR_CALL *hr_packet_callback)(void* user, const hr_packet* packet);
 typedef void (HR_CALL *hr_log_callback)(void* user, int32_t level, const char* utf8_message);
 typedef void (HR_CALL *hr_device_callback)(void* user, const hr_device* device);
@@ -59,3 +60,15 @@ HR_API void HR_CALL hr_mux_abort(hr_mux* mux);
 HR_API int HR_CALL hr_thumbnail(const wchar_t* path, int32_t max_width,
                                uint8_t** pixels, int32_t* width, int32_t* height, int32_t* stride);
 HR_API void HR_CALL hr_free(void* memory);
+HR_API int HR_CALL hr_player_open(const wchar_t* path, hr_player** result,
+                                 int32_t* width, int32_t* height, double* duration);
+HR_API void HR_CALL hr_player_close(hr_player* player);
+HR_API int HR_CALL hr_player_play(hr_player* player);
+HR_API int HR_CALL hr_player_pause(hr_player* player);
+HR_API int HR_CALL hr_player_seek(hr_player* player, double seconds);
+HR_API int HR_CALL hr_player_get_state(hr_player* player, int32_t* is_playing, int32_t* is_ended, double* current_pts);
+HR_API int HR_CALL hr_player_read_frame(hr_player* player, uint8_t* buffer, int32_t stride,
+                                       int32_t width, int32_t height, int32_t* updated, double* pts);
+HR_API int HR_CALL hr_player_preview(hr_player* player, double seconds, int32_t max_width,
+                                    uint8_t** pixels, int32_t* width, int32_t* height, int32_t* stride);
+HR_API int HR_CALL hr_player_set_volume(hr_player* player, float volume);

@@ -120,24 +120,40 @@
       </Setter.Value>
     </Setter>
   </Style>
+  <Style x:Key="PlayerSliderProgressButton" TargetType="RepeatButton">
+    <Setter Property="OverridesDefaultStyle" Value="True"/>
+    <Setter Property="IsTabStop" Value="False"/>
+    <Setter Property="Focusable" Value="False"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RepeatButton">
+          <Border Background="{TemplateBinding Background}" CornerRadius="2.5,0,0,2.5" Margin="0,0,-6,0"/>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
   <Style x:Key="PlayerSliderThumb" TargetType="Thumb">
     <Setter Property="OverridesDefaultStyle" Value="True"/>
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Thumb">
-          <Ellipse x:Name="ThumbEllipse" Width="12" Height="12" Fill="{StaticResource Accent}" Stroke="#101619" StrokeThickness="1.5">
-            <Ellipse.Effect>
-              <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.35"/>
-            </Ellipse.Effect>
-          </Ellipse>
+          <Grid Background="Transparent" Width="12" Height="20">
+            <Ellipse x:Name="ThumbEllipse" Width="12" Height="12" Fill="{StaticResource Accent}" Stroke="#101619" StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Ellipse.Effect>
+                <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.45"/>
+              </Ellipse.Effect>
+            </Ellipse>
+          </Grid>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="ThumbEllipse" Property="Width" Value="14"/>
-              <Setter TargetName="ThumbEllipse" Property="Height" Value="14"/>
+              <Setter TargetName="ThumbEllipse" Property="Width" Value="16"/>
+              <Setter TargetName="ThumbEllipse" Property="Height" Value="16"/>
             </Trigger>
             <Trigger Property="IsDragging" Value="True">
               <Setter TargetName="ThumbEllipse" Property="Fill" Value="#E2F1B2"/>
+              <Setter TargetName="ThumbEllipse" Property="Width" Value="17"/>
+              <Setter TargetName="ThumbEllipse" Property="Height" Value="17"/>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -148,24 +164,43 @@
     <Setter Property="Focusable" Value="True"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
     <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="IsMoveToPointEnabled" Value="True"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Slider">
-          <Grid VerticalAlignment="Center">
-            <Border x:Name="TrackBackground" Height="4" CornerRadius="2" Background="#263137" VerticalAlignment="Center"/>
+          <Grid VerticalAlignment="Center" Height="26" Background="Transparent">
+            <Border x:Name="TrackBackground" Height="5" CornerRadius="2.5" Background="#263137" VerticalAlignment="Center"/>
             <Track x:Name="PART_Track" VerticalAlignment="Center">
               <Track.DecreaseRepeatButton>
-                <RepeatButton Style="{StaticResource PlayerSliderRepeatButton}" Background="{StaticResource Accent}" Command="Slider.DecreaseLarge" Height="4" VerticalAlignment="Center"/>
+                <RepeatButton x:Name="ProgressTrack" Style="{StaticResource PlayerSliderProgressButton}" Background="{StaticResource Accent}" Command="Slider.DecreaseLarge" Height="5" VerticalAlignment="Center"/>
               </Track.DecreaseRepeatButton>
               <Track.Thumb>
                 <Thumb Style="{StaticResource PlayerSliderThumb}"/>
               </Track.Thumb>
               <Track.IncreaseRepeatButton>
-                <RepeatButton Style="{StaticResource PlayerSliderRepeatButton}" Background="Transparent" Command="Slider.IncreaseLarge" Height="4" VerticalAlignment="Center"/>
+                <RepeatButton Style="{StaticResource PlayerSliderRepeatButton}" Background="Transparent" Command="Slider.IncreaseLarge" Height="5" VerticalAlignment="Center"/>
               </Track.IncreaseRepeatButton>
             </Track>
           </Grid>
           <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Trigger.EnterActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="TrackBackground" Storyboard.TargetProperty="Height" To="8" Duration="0:0:0.12"/>
+                    <DoubleAnimation Storyboard.TargetName="ProgressTrack" Storyboard.TargetProperty="Height" To="8" Duration="0:0:0.12"/>
+                  </Storyboard>
+                </BeginStoryboard>
+              </Trigger.EnterActions>
+              <Trigger.ExitActions>
+                <BeginStoryboard>
+                  <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="TrackBackground" Storyboard.TargetProperty="Height" To="5" Duration="0:0:0.15"/>
+                    <DoubleAnimation Storyboard.TargetName="ProgressTrack" Storyboard.TargetProperty="Height" To="5" Duration="0:0:0.15"/>
+                  </Storyboard>
+                </BeginStoryboard>
+              </Trigger.ExitActions>
+            </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.4"/>
             </Trigger>

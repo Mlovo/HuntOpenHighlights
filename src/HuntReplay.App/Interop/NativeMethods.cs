@@ -64,6 +64,18 @@ internal static class NativeMethods
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     internal static extern int hr_thumbnail(string path, int maxWidth, out IntPtr pixels, out int width, out int height, out int stride);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern void hr_free(IntPtr memory);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal static extern int hr_player_open(string path, out IntPtr player, out int width, out int height, out double duration);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern void hr_player_close(IntPtr player);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_player_play(IntPtr player);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_player_pause(IntPtr player);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_player_seek(IntPtr player, double seconds);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_player_get_state(IntPtr player, out int isPlaying, out int isEnded, out double currentPts);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_player_read_frame(IntPtr player, IntPtr buffer, int stride, int width, int height, out int updated, out double pts);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int hr_player_preview(IntPtr player, double seconds, int maxWidth, out IntPtr pixels, out int width, out int height, out int stride);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int hr_player_set_volume(IntPtr player, float volume);
 
     internal static void Check(int result)
     {

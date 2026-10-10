@@ -9,7 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>HuntReplayStudio</AssemblyName>
     <RootNamespace>HuntReplay.App</RootNamespace>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/Studio.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -28,9 +28,6 @@
     <EmbeddedResource Include="Assets/Studio.ico" LogicalName="HuntReplay.Studio.ico" />
     <EmbeddedResource Include="../../artifacts/runtime/*.dll" LogicalName="HuntReplay.Native.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../artifacts/runtime/native.sha256" LogicalName="HuntReplay.Native.manifest" Condition="Exists('../../artifacts/runtime/native.sha256')" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
   </ItemGroup>
   <Target Name="RequireNativePayload" BeforeTargets="PrepareForPublish" Condition="'$(SkipNativePayloadCheck)' != 'true'">
     <Error Condition="!Exists('../../artifacts/runtime/HuntReplay.Media.dll')" Text="Native runtime missing. Run tools/Build.ps1 on Windows before publishing." />

@@ -6,6 +6,15 @@ void mux_write(hr_mux*, const hr_packet*, int64_t);
 void mux_close(hr_mux*);
 void mux_abort(hr_mux*);
 void thumbnail(const wchar_t*, int, uint8_t**, int*, int*, int*);
+hr_player* player_open(const wchar_t*, int32_t*, int32_t*, double*);
+void player_close(hr_player*);
+void player_play(hr_player*);
+void player_pause(hr_player*);
+void player_seek(hr_player*, double);
+void player_get_state(hr_player*, int32_t*, int32_t*, double*);
+void player_read_frame(hr_player*, uint8_t*, int32_t, int32_t, int32_t, int32_t*, double*);
+void player_preview(hr_player*, double, int32_t, uint8_t**, int32_t*, int32_t*, int32_t*);
+void player_set_volume(hr_player*, float);
 thread_local std::wstring last_error;
 template<typename F> int guard(F operation) noexcept {
     try { operation(); last_error.clear(); return 0; }
@@ -111,3 +120,27 @@ int HR_CALL hr_thumbnail(const wchar_t* path, int32_t max_width, uint8_t** pixel
     return hr::guard([&] { hr::thumbnail(path, max_width, pixels, width, height, stride); });
 }
 void HR_CALL hr_free(void* memory) { av_free(memory); }
+int HR_CALL hr_player_open(const wchar_t* path, hr_player** result, int32_t* width, int32_t* height, double* duration) {
+    if (result) *result = nullptr;
+    return hr::guard([&] {
+        if (!path || !result || !width || !height || !duration) throw std::runtime_error("Missing player arguments.");
+        *result = hr::player_open(path, width, height, duration);
+    });
+}
+void HR_CALL hr_player_close(hr_player* player) { hr::player_close(player); }
+int HR_CALL hr_player_play(hr_player* player) { return hr::guard([&] { hr::player_play(player); }); }
+int HR_CALL hr_player_pause(hr_player* player) { return hr::guard([&] { hr::player_pause(player); }); }
+int HR_CALL hr_player_seek(hr_player* player, double seconds) { return hr::guard([&] { hr::player_seek(player, seconds); }); }
+int HR_CALL hr_player_get_state(hr_player* player, int32_t* is_playing, int32_t* is_ended, double* current_pts) {
+    return hr::guard([&] { hr::player_get_state(player, is_playing, is_ended, current_pts); });
+}
+int HR_CALL hr_player_read_frame(hr_player* player, uint8_t* buffer, int32_t stride, int32_t width, int32_t height, int32_t* updated, double* pts) {
+    return hr::guard([&] { hr::player_read_frame(player, buffer, stride, width, height, updated, pts); });
+}
+int HR_CALL hr_player_preview(hr_player* player, double seconds, int32_t max_width,
+                             uint8_t** pixels, int32_t* width, int32_t* height, int32_t* stride) {
+    return hr::guard([&] { hr::player_preview(player, seconds, max_width, pixels, width, height, stride); });
+}
+int HR_CALL hr_player_set_volume(hr_player* player, float volume) {
+    return hr::guard([&] { hr::player_set_volume(player, volume); });
+}

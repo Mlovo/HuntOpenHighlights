@@ -36,7 +36,17 @@ if (!$SkipTests) {
     Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.WindowsTests','--configuration',$Configuration)
 }
 & (Join-Path $PSScriptRoot 'PrepareFFmpeg.ps1') -ArchivePath $FFmpegArchive -Offline:$Offline
-Invoke-Checked 'cmake' @('-S','native','-B','artifacts/native','-G','Visual Studio 17 2022','-A','x64',"-DFFMPEG_ROOT=$Root/native/vendor/ffmpeg")
+$CmakeGenerator = if ($env:GITHUB_ACTIONS -eq 'true') { 'Visual Studio 17 2022' } else { 'Visual Studio 18 2026' }
+try {
+    Invoke-Checked 'cmake' @('-S','native','-B','artifacts/native','-G',$CmakeGenerator,'-A','x64',"-DFFMPEG_ROOT=$Root/native/vendor/ffmpeg")
+} catch {
+    if ($CmakeGenerator -eq 'Visual Studio 18 2026') {
+        if (Test-Path 'artifacts/native') { Remove-Item -LiteralPath 'artifacts/native' -Recurse -Force }
+        Invoke-Checked 'cmake' @('-S','native','-B','artifacts/native','-G','Visual Studio 17 2022','-A','x64',"-DFFMPEG_ROOT=$Root/native/vendor/ffmpeg")
+    } else {
+        throw
+    }
+}
 Invoke-Checked 'cmake' @('--build','artifacts/native','--config',$Configuration,'--parallel','4')
 $Runtime = Join-Path $Root 'artifacts/runtime'
 if (Test-Path $Runtime) { Remove-Item -LiteralPath $Runtime -Recurse -Force }
