@@ -10,18 +10,25 @@ public partial class SetupWizard : Window
     internal SetupWizard(SetupStatus status)
     {
         InitializeComponent(); initial = status;
+        DataContext = new { Loc = LocalizationService.Instance };
+        Title = LocalizationService.Instance["Wizard.Title"];
         SourceInitialized += (_, _) => Interop.WindowAppearance.DarkCaption(this);
         StatusText.Text = status.Detail;
+        bool en = LocalizationService.Instance.IsEnglish;
         if (status.Conflict)
         {
             ReplaceCheck.Visibility = Visibility.Visible;
-            StatusText.Text = "Найдена существующая регистрация NVIDIA. Замена может отключить Highlights в NVIDIA App. Не запускайте два сервера одновременно.";
+            StatusText.Text = en
+                ? "Existing NVIDIA registration found. Replacing it may disable Highlights in NVIDIA App. Do not run both servers concurrently."
+                : "Найдена существующая регистрация NVIDIA. Замена может отключить Highlights в NVIDIA App. Не запускайте два сервера одновременно.";
         }
         if (status.NvidiaActive)
         {
-            StatusText.Text = "Обнаружена служба NVIDIA (NvContainer). HuntReplay автоматически приостановит её на время работы и возобновит при выходе.";
+            StatusText.Text = en
+                ? "NVIDIA service (NvContainer) detected. HuntReplay will pause it while running and restore it upon exit."
+                : "Обнаружена служба NVIDIA (NvContainer). HuntReplay автоматически приостановит её на время работы и возобновит при выходе.";
         }
-        if (status.Ready) InstallButton.Content = "Всё готово · продолжить";
+        if (status.Ready) InstallButton.Content = en ? "All set · continue" : "Всё готово · продолжить";
         Closing += (_, args) => { if (installing) args.Cancel = true; };
     }
     private void LaterClicked(object sender, RoutedEventArgs e) { if (!installing) { DialogResult = false; Close(); } }

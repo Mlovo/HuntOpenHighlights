@@ -3,11 +3,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using HuntReplay.App.Interop;
+using HuntReplay.App.Services;
 using HuntReplay.App.ViewModels;
 
 namespace HuntReplay.App.Views;
@@ -32,6 +34,7 @@ public partial class GalleryView : UserControl
     {
         InitializeComponent();
         timer.Tick += OnTimerTick;
+        ClipList.SizeChanged += OnClipListSizeChanged;
         Unloaded += (_, _) => Close();
     }
 
@@ -117,7 +120,7 @@ public partial class GalleryView : UserControl
         updating = false;
         PositionText.Text = "00:00 / 00:00";
         PlayerHint.Visibility = Visibility.Visible;
-        PlayerHint.Text = "Выберите клип, чтобы посмотреть";
+        PlayerHintText.Text = LocalizationService.Instance["Gallery.SelectClipHint"];
     }
 
     private void SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -139,7 +142,7 @@ public partial class GalleryView : UserControl
             if (res < 0 || opened == IntPtr.Zero)
             {
                 PlayerHint.Visibility = Visibility.Visible;
-                PlayerHint.Text = "Не удалось открыть видеоклип.";
+                PlayerHintText.Text = LocalizationService.Instance["Gallery.OpenFailed"];
                 return;
             }
 
@@ -180,7 +183,7 @@ public partial class GalleryView : UserControl
         catch (Exception ex)
         {
             PlayerHint.Visibility = Visibility.Visible;
-            PlayerHint.Text = "Ошибка плеера: " + ex.Message;
+            PlayerHintText.Text = "Ошибка плеера: " + ex.Message;
         }
     }
 
@@ -470,9 +473,10 @@ public partial class GalleryView : UserControl
         }
 
         int percent = (int)Math.Round(currentVolume * 100);
+        bool en = LocalizationService.Instance.IsEnglish;
         if (VolumeSlider is not null)
         {
-            VolumeSlider.ToolTip = $"Громкость: {percent}%";
+            VolumeSlider.ToolTip = (en ? "Volume: " : "Громкость: ") + $"{percent}%";
         }
 
         if (VolumeIcon is not null && VolumeButton is not null)
@@ -480,17 +484,17 @@ public partial class GalleryView : UserControl
             if (currentVolume <= 0.001)
             {
                 VolumeIcon.Text = "\uE74F";
-                VolumeButton.ToolTip = "Включить звук";
+                VolumeButton.ToolTip = en ? "Unmute" : "Включить звук";
             }
             else if (currentVolume < 0.5)
             {
                 VolumeIcon.Text = "\uE993";
-                VolumeButton.ToolTip = $"Выключить звук ({percent}%)";
+                VolumeButton.ToolTip = (en ? "Mute" : "Выключить звук") + $" ({percent}%)";
             }
             else
             {
                 VolumeIcon.Text = "\uE767";
-                VolumeButton.ToolTip = $"Выключить звук ({percent}%)";
+                VolumeButton.ToolTip = (en ? "Mute" : "Выключить звук") + $" ({percent}%)";
             }
         }
     }
@@ -500,6 +504,37 @@ public partial class GalleryView : UserControl
         double step = e.Delta > 0 ? 0.05 : -0.05;
         VolumeSlider.Value = Math.Clamp(VolumeSlider.Value + step, 0.0, 1.0);
         e.Handled = true;
+    }
+
+    private void OnClipListSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        double availableWidth = e.NewSize.Width;
+        if (availableWidth <= 0) return;
+
+        // Visual balance: target min tile width ~240px with 14px horizontal spacing
+        const double gap = 14.0;
+        const double minTileWidth = 240.0;
+
+        int cols = Math.Max(1, (int)Math.Floor((availableWidth + gap) / (minTileWidth + gap)));
+
+        var uniformGrid = FindVisualChild<UniformGrid>(ClipList);
+        if (uniformGrid is not null && uniformGrid.Columns != cols)
+        {
+            uniformGrid.Columns = cols;
+        }
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        int count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T typed) return typed;
+            var nested = FindVisualChild<T>(child);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 }
 

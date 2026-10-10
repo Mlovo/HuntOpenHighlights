@@ -132,4 +132,6 @@ public sealed class SystemSettings
     public bool AutoBufferWithGame { get; set; } = true;
     public bool CloseToTray { get; set; } = true;
     public bool FirstRunCompleted { get; set; }
+    public string Language { get; set; } = "ru";
+    public string Theme { get; set; } = "dark";
 }

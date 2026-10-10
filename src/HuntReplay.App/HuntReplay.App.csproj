@@ -9,7 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>HuntReplayStudio</AssemblyName>
     <RootNamespace>HuntReplay.App</RootNamespace>
-    <Version>0.1.4</Version>
+    <Version>0.1.5</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/Studio.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

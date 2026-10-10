@@ -83,6 +83,20 @@ internal static class Program
             True(TextBlocks(box).Any(t => t.Text == "30 ГБ"));
             False(TextBlocks(box).Any(t => t.Text.Contains("Choice", StringComparison.Ordinal) || t.Text.Contains("Value =", StringComparison.Ordinal)));
         }));
+        Test("production theme: choice label updates in-place without clearing selected value", () => WithThemedWindow((_, host) =>
+        {
+            var testChoices = new[] { new Choice<int>(15, "15 ГБ"), new Choice<int>(30, "30 ГБ") };
+            var box = new ComboBox { DisplayMemberPath = "Label", SelectedValuePath = "Value", ItemsSource = testChoices, SelectedValue = 30 };
+            host.Children.Add(box);
+            Pump(); box.ApplyTemplate(); box.UpdateLayout(); Pump();
+            Equal(30, box.SelectedValue);
+            True(TextBlocks(box).Any(t => t.Text == "30 ГБ"));
+
+            testChoices[1].Label = "30 GB";
+            Pump(); box.UpdateLayout(); Pump();
+            Equal(30, box.SelectedValue);
+            True(TextBlocks(box).Any(t => t.Text == "30 GB"));
+        }));
         Test("production theme: opened popup items show each label for its value", () => WithThemedWindow((_, host) =>
         {
             var box = new ComboBox { DisplayMemberPath = "Label", SelectedValuePath = "Value", ItemsSource = choices, SelectedValue = 15 };

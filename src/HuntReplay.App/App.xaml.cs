@@ -85,6 +85,7 @@ public partial class App : Application
             };
             var store = new SettingsStore(Path.Combine(root, "config.json"));
             var settings = store.Load();
+            ThemeService.Apply(string.Equals(settings.System.Theme, "light", StringComparison.OrdinalIgnoreCase) ? AppTheme.Light : AppTheme.Dark);
             if (store.LoadWarning is { } warning) log.Write(warning, "WARN");
             string? storageWarning = null;
             try { Directory.CreateDirectory(settings.Storage.Directory); }
@@ -125,14 +126,15 @@ public partial class App : Application
     {
         using var iconStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("HuntReplay.Studio.ico")!;
         using var icon = new System.Drawing.Icon(iconStream);
-        tray = new Forms.NotifyIcon { Icon = (System.Drawing.Icon)icon.Clone(), Text = "HuntReplay Studio · автономные хайлайты", Visible = true };
+        var loc = LocalizationService.Instance;
+        tray = new Forms.NotifyIcon { Icon = (System.Drawing.Icon)icon.Clone(), Text = loc["Tray.Tooltip"], Visible = true };
         tray.DoubleClick += (_, _) => Dispatcher.Invoke(() => window?.ShowStudio());
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add("Открыть HuntReplay Studio", null, (_, _) => Dispatcher.Invoke(() => window?.ShowStudio()));
-        menu.Items.Add("Сохранить повтор", null, (_, _) => Dispatcher.Invoke(() => model?.SaveCommand.Execute(null)));
-        menu.Items.Add("Запустить / остановить буфер", null, (_, _) => Dispatcher.Invoke(() => model?.ToggleBufferCommand.Execute(null)));
+        menu.Items.Add(loc["Tray.Open"], null, (_, _) => Dispatcher.Invoke(() => window?.ShowStudio()));
+        menu.Items.Add(loc["Tray.Save"], null, (_, _) => Dispatcher.Invoke(() => model?.SaveCommand.Execute(null)));
+        menu.Items.Add(loc["Tray.Toggle"], null, (_, _) => Dispatcher.Invoke(() => model?.ToggleBufferCommand.Execute(null)));
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("Выход", null, async (_, _) => await ExitAsync());
+        menu.Items.Add(loc["Tray.Exit"], null, async (_, _) => await ExitAsync());
         tray.ContextMenuStrip = menu;
     }
 

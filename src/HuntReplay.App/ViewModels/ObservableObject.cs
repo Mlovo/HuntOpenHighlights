@@ -18,7 +18,21 @@ internal abstract class ObservableObject : INotifyPropertyChanged
 
 // The label is what a ComboBox shows in both the closed box and the popup, even when a template
 // does not forward DisplayMemberPath / ContentTemplate; "Choice { Value = …, Label = … }" must never appear.
-internal sealed record Choice<T>(T Value, string Label)
+internal sealed class Choice<T> : ObservableObject
 {
+    private string label;
+    public T Value { get; }
+    public string Label
+    {
+        get => label;
+        set => Set(ref label, value);
+    }
+
+    public Choice(T value, string label)
+    {
+        Value = value;
+        this.label = label;
+    }
+
     public override string ToString() => Label;
 }

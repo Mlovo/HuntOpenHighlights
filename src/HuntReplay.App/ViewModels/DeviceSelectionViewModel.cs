@@ -12,24 +12,34 @@ namespace HuntReplay.App.ViewModels;
 internal sealed class DeviceSelectionViewModel : ObservableObject
 {
     private readonly int kind;
-    private readonly string defaultLabel;
+    private readonly Func<string> defaultLabelProvider;
+    private readonly Func<string>? unavailableCaptionProvider;
     private readonly Func<string> readId;
     private readonly Action<string> writeId;
     private IReadOnlyList<DeviceOption> options = [];
+    private IEnumerable<DeviceOption> cachedDevices = [];
     private bool refreshing;
 
     public DeviceSelectionViewModel(int kind, string defaultLabel, Func<string> readId, Action<string> writeId)
+        : this(kind, () => defaultLabel, null, readId, writeId)
     {
-        this.kind = kind; this.defaultLabel = defaultLabel;
-        this.readId = readId; this.writeId = writeId;
+    }
+
+    public DeviceSelectionViewModel(int kind, Func<string> defaultLabelProvider, Func<string>? unavailableCaptionProvider, Func<string> readId, Action<string> writeId)
+    {
+        this.kind = kind;
+        this.defaultLabelProvider = defaultLabelProvider;
+        this.unavailableCaptionProvider = unavailableCaptionProvider;
+        this.readId = readId;
+        this.writeId = writeId;
         Refresh([]);
     }
 
     public IReadOnlyList<DeviceOption> Options { get => options; private set => Set(ref options, value); }
 
-    private string UnavailableCaption => kind == 0
+    private string UnavailableCaption => unavailableCaptionProvider?.Invoke() ?? (kind == 0
         ? "Недоступно · сохранённый монитор не подключён"
-        : "Недоступно · сохранённое устройство не подключено";
+        : "Недоступно · сохранённое устройство не подключено");
 
     public string? SelectedId
     {
@@ -42,11 +52,12 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
         }
     }
 
-    public void Refresh(IEnumerable<DeviceOption> devices)
+    public void Refresh(IEnumerable<DeviceOption>? devices = null)
     {
+        if (devices is not null) cachedDevices = devices;
         string selected = readId();
-        var replacement = new List<DeviceOption> { new(kind, "", defaultLabel) };
-        replacement.AddRange(devices.Where(d => d.Kind == kind && !string.IsNullOrEmpty(d.Id)));
+        var replacement = new List<DeviceOption> { new(kind, "", defaultLabelProvider()) };
+        replacement.AddRange(cachedDevices.Where(d => d.Kind == kind && !string.IsNullOrEmpty(d.Id)));
         if (selected.Length > 0 && replacement.All(d => d.Id != selected))
             replacement.Add(new(kind, selected, UnavailableCaption));
         refreshing = true;

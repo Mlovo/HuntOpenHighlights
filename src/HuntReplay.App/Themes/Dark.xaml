@@ -8,6 +8,16 @@
   <SolidColorBrush x:Key="Accent" Color="#CCDF92"/>
   <SolidColorBrush x:Key="AccentDark" Color="#1A2216"/>
   <SolidColorBrush x:Key="Warning" Color="#D5B582"/>
+  <LinearGradientBrush x:Key="HeroBackground" StartPoint="0,0" EndPoint="1,1">
+    <GradientStop Color="#222D22"/>
+    <GradientStop Color="#18201C" Offset="0.55"/>
+    <GradientStop Color="#111819" Offset="1"/>
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="PlayerBackground" Color="#080C0E"/>
+  <SolidColorBrush x:Key="PlayerPlaceholder" Color="#080C0E"/>
+  <SolidColorBrush x:Key="HeroBorder" Color="#394532"/>
+  <SolidColorBrush x:Key="HeroCurves" Color="#5E714F"/>
+  <SolidColorBrush x:Key="HeroAccentText" Color="#ACBF89"/>
   <views:PageVisibilityConverter x:Key="PageVisibility"/>
   <views:PageSelectedConverter x:Key="PageSelected"/>
   <views:BoolVisibilityConverter x:Key="BoolVisibility"/>
