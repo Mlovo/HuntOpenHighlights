@@ -13,8 +13,11 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'The WP
 $Root = Split-Path $PSScriptRoot -Parent
 Set-Location $Root
 function Invoke-Checked([string]$Exe, [string[]]$Arguments) {
+    Write-Host "==> Executing: $Exe $($Arguments -join ' ')"
     & $Exe @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$Exe exited with $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Exe $($Arguments -join ' ') exited with $LASTEXITCODE"
+    }
 }
 trap {
     if ($env:GITHUB_ACTIONS -eq 'true') {
