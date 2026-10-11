@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -11,6 +11,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.Tests", "tests\HuntReplay.Tests\HuntReplay.Tests.csproj", "{74D8BF5E-FE48-5347-89A5-FE3E9C8CE7F8}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.WindowsTests", "tests\HuntReplay.WindowsTests\HuntReplay.WindowsTests.csproj", "{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{2954FE3A-8D9B-425B-9AA5-CC8D7E693508}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.E2ETests", "tests\HuntReplay.E2ETests\HuntReplay.E2ETests.csproj", "{865EF298-3B59-4D73-B7A3-8CC04F588855}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -38,5 +42,12 @@ Global
 		{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}.Debug|x64.Build.0 = Debug|Any CPU
 		{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}.Release|x64.ActiveCfg = Release|Any CPU
 		{4D9031CB-B0A1-5BA4-B625-68FDCAB705C7}.Release|x64.Build.0 = Release|Any CPU
+		{865EF298-3B59-4D73-B7A3-8CC04F588855}.Debug|x64.ActiveCfg = Debug|x64
+		{865EF298-3B59-4D73-B7A3-8CC04F588855}.Debug|x64.Build.0 = Debug|x64
+		{865EF298-3B59-4D73-B7A3-8CC04F588855}.Release|x64.ActiveCfg = Release|x64
+		{865EF298-3B59-4D73-B7A3-8CC04F588855}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{865EF298-3B59-4D73-B7A3-8CC04F588855} = {2954FE3A-8D9B-425B-9AA5-CC8D7E693508}
 	EndGlobalSection
 EndGlobal

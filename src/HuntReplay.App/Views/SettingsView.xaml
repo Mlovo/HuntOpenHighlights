@@ -1,7 +1,7 @@
 <UserControl x:Class="HuntReplay.App.Views.SettingsView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <DockPanel>
     <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="0,18,0,0" Margin="0,18,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Loc[Settings.Notice]}" Style="{DynamicResource MutedText}" VerticalAlignment="Center" Margin="0,0,20,0"/><Button Grid.Column="1" Content="{Binding Loc[Settings.Save]}" Command="{Binding ApplySettingsCommand}" Style="{DynamicResource PrimaryButton}"/></Grid></Border>
-    <TabControl>
+    <TabControl x:Name="SettingsTabControl" SelectionChanged="OnTabSelectionChanged">
       <TabItem Header="{Binding Loc[Settings.TabVideo]}"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,8,0">
         <TextBlock Text="{Binding Loc[Video.Title]}" Style="{DynamicResource SectionTitle}"/><TextBlock Text="{Binding Loc[Video.Subtitle]}" Style="{DynamicResource MutedText}" Margin="0,0,0,22"/>
         <Border Style="{DynamicResource Card}"><StackPanel>

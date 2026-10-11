@@ -19,7 +19,11 @@ public partial class MainWindow : Window
     {
         if (CanClose) return;
         e.Cancel = true;
-        if (DataContext is MainViewModel { CloseToTray: true }) { Hide(); return; }
+        if (DataContext is MainViewModel vm)
+        {
+            if (!await vm.ConfirmLeaveSettingsAsync()) return;
+            if (vm.CloseToTray) { Hide(); return; }
+        }
         await ((App)Application.Current).ExitAsync();
     }
     internal void ShowStudio()

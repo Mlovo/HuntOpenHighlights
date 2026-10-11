@@ -1,4 +1,4 @@
-<UserControl x:Class="HuntReplay.App.Views.GalleryView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" DataContextChanged="ContextChanged" IsVisibleChanged="VisibilityChanged">
+<UserControl x:Class="HuntReplay.App.Views.GalleryView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:controls="clr-namespace:HuntReplay.App.Controls" DataContextChanged="ContextChanged" IsVisibleChanged="VisibilityChanged" Focusable="True">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -67,23 +67,149 @@
                   </Border>
                 </Canvas>
 
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <Button x:Name="PlayButton" Content="▶" Click="PlayPause" Padding="12,5" MinHeight="30" IsEnabled="False"/>
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                    <Button x:Name="VolumeButton" Style="{DynamicResource QuietButton}" Click="VolumeButtonClick" Width="30" Height="30" Padding="0" Cursor="Hand" ToolTip="{Binding Loc[Gallery.Volume]}">
-                      <TextBlock x:Name="VolumeIcon" Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <StackPanel>
+                  <!-- Player Controls & Timeline -->
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="PlayButton" Content="▶" Click="PlayPause" Padding="12,5" MinHeight="30" IsEnabled="False"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                      <Button x:Name="VolumeButton" Style="{DynamicResource QuietButton}" Click="VolumeButtonClick" Width="30" Height="30" Padding="0" Cursor="Hand" ToolTip="{Binding Loc[Gallery.Volume]}">
+                        <TextBlock x:Name="VolumeIcon" Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Button>
+                      <Slider x:Name="VolumeSlider" Width="76" Margin="4,0,0,0" Style="{DynamicResource PlayerSlider}" Minimum="0" Maximum="1" Value="1" SmallChange="0.05" LargeChange="0.1" ValueChanged="VolumeChanged" PreviewMouseWheel="VolumeMouseWheel" ToolTip="100%"/>
+                    </StackPanel>
+
+                    <!-- Shared Timeline Container -->
+                    <Grid Grid.Column="2" Margin="16,0">
+                      <Slider x:Name="Seek" Style="{DynamicResource PlayerSlider}" Minimum="0" Maximum="1" IsMoveToPointEnabled="True" IsSnapToTickEnabled="False" IsEnabled="False" PreviewMouseLeftButtonDown="SeekMouseDown" PreviewMouseMove="SeekMouseMove" PreviewMouseLeftButtonUp="SeekMouseUp" MouseMove="SeekHover" MouseLeave="SeekLeave" ValueChanged="SeekChanged"/>
+                      <controls:RangeSlider x:Name="TrimSlider" Visibility="Collapsed" MinRange="0.5" RangeDragStarted="OnTrimDragStarted" LiveSeek="OnTrimSliderLiveSeek" RangeDragCompleted="OnTrimDragCompleted" SelectionStartChanged="OnTrimSelectionStartChanged" SelectionEndChanged="OnTrimSelectionEndChanged" PlayheadChanged="OnTrimPlayheadChanged"/>
+                    </Grid>
+
+                    <TextBlock x:Name="PositionText" Grid.Column="3" Text="00:00 / 00:00" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/>
+
+                    <Button x:Name="TrimButton" Grid.Column="4" Margin="12,0,0,0" Click="TrimButtonClick" IsEnabled="False" Padding="10,5" MinHeight="30" FontSize="11">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7A8;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="TrimButtonText" Text="Обрезать видео" VerticalAlignment="Center"/>
+                      </StackPanel>
                     </Button>
-                    <Slider x:Name="VolumeSlider" Width="76" Margin="4,0,0,0" Style="{DynamicResource PlayerSlider}" Minimum="0" Maximum="1" Value="1" SmallChange="0.05" LargeChange="0.1" ValueChanged="VolumeChanged" PreviewMouseWheel="VolumeMouseWheel" ToolTip="100%"/>
-                  </StackPanel>
-                  <Slider x:Name="Seek" Grid.Column="2" Style="{DynamicResource PlayerSlider}" Margin="16,0" Minimum="0" Maximum="1" IsMoveToPointEnabled="True" IsSnapToTickEnabled="False" IsEnabled="False" PreviewMouseLeftButtonDown="SeekMouseDown" PreviewMouseMove="SeekMouseMove" PreviewMouseLeftButtonUp="SeekMouseUp" MouseMove="SeekHover" MouseLeave="SeekLeave" ValueChanged="SeekChanged"/>
-                  <TextBlock x:Name="PositionText" Grid.Column="3" Text="00:00 / 00:00" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/>
-                </Grid>
+                  </Grid>
+
+                  <!-- Inline Collapsible Trim Toolbar -->
+                  <Border x:Name="TrimToolbar" Visibility="Collapsed" Margin="0,10,0,0" Padding="0,10,0,0" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0">
+                    <StackPanel>
+                      <!-- Row 1: Boundary Range Controls (Start & End) -->
+                      <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                          <!-- Left: Start boundary controls -->
+                          <ColumnDefinition Width="Auto"/>
+                          <!-- Middle spacer -->
+                          <ColumnDefinition Width="*"/>
+                          <!-- Right: End boundary controls -->
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Group 0: Start Boundary Controls -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                          <TextBlock x:Name="TrimStartLabel" Text="Начало:" Style="{DynamicResource Eyebrow}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                          <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="4" Padding="6,3" Margin="0,0,6,0">
+                            <TextBlock x:Name="TrimStartText" Text="00:00" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                          </Border>
+                          <Button x:Name="StepStartMinusButton" Content="-0.1s" Click="StepStartMinusClick" ToolTip="-0.1 s" Padding="5,3" MinHeight="26" FontSize="10" Margin="0,0,3,0"/>
+                          <Button x:Name="StepStartPlusButton" Content="+0.1s" Click="StepStartPlusClick" ToolTip="+0.1 s" Padding="5,3" MinHeight="26" FontSize="10" Margin="0,0,8,0"/>
+                          <Button x:Name="JumpStartButton" Click="JumpStartClick" ToolTip="Перейти к началу фрагмента [Home]" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,4,0">
+                            <StackPanel Orientation="Horizontal">
+                              <TextBlock Text="&#xE892;" FontFamily="Segoe MDL2 Assets" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                              <TextBlock x:Name="JumpStartText" Text="К началу" VerticalAlignment="Center"/>
+                            </StackPanel>
+                          </Button>
+                          <Button x:Name="MarkInButton" Click="MarkInClick" ToolTip="Установить начало по текущему кадру [I]" Padding="8,3" MinHeight="26" FontSize="11">
+                            <StackPanel Orientation="Horizontal">
+                              <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                              <TextBlock x:Name="MarkInText" Text="Задать начало" VerticalAlignment="Center"/>
+                            </StackPanel>
+                          </Button>
+                        </StackPanel>
+
+                        <!-- Group 2: End Boundary Controls -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                          <Button x:Name="MarkOutButton" Click="MarkOutClick" ToolTip="Установить конец по текущему кадру [O]" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,4,0">
+                            <StackPanel Orientation="Horizontal">
+                              <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                              <TextBlock x:Name="MarkOutText" Text="Задать конец" VerticalAlignment="Center"/>
+                            </StackPanel>
+                          </Button>
+                          <Button x:Name="JumpEndButton" Click="JumpEndClick" ToolTip="Перейти к концу фрагмента [End]" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal">
+                              <TextBlock x:Name="JumpEndText" Text="К концу" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                              <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="10" VerticalAlignment="Center"/>
+                            </StackPanel>
+                          </Button>
+                          <Button x:Name="StepEndMinusButton" Content="-0.1s" Click="StepEndMinusClick" ToolTip="-0.1 s" Padding="5,3" MinHeight="26" FontSize="10" Margin="0,0,3,0"/>
+                          <Button x:Name="StepEndPlusButton" Content="+0.1s" Click="StepEndPlusClick" ToolTip="+0.1 s" Padding="5,3" MinHeight="26" FontSize="10" Margin="0,0,6,0"/>
+                          <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="4" Padding="6,3" Margin="0,0,6,0">
+                            <TextBlock x:Name="TrimEndText" Text="00:00" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                          </Border>
+                          <TextBlock x:Name="TrimEndLabel" Text="Конец:" Style="{DynamicResource Eyebrow}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                      </Grid>
+
+                      <!-- Row 2: Playback Preview, Duration & Save/Cancel Actions -->
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <!-- Left: Preview & Duration -->
+                          <ColumnDefinition Width="Auto"/>
+                          <!-- Middle spacer -->
+                          <ColumnDefinition Width="*"/>
+                          <!-- Right: Save & Cancel -->
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Preview & Duration Badge -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                          <Button x:Name="PreviewRangeButton" Click="PreviewRangeClick" ToolTip="Предпросмотр фрагмента [Space]" Padding="10,4" MinHeight="28" FontSize="11" Margin="0,0,10,0">
+                            <StackPanel Orientation="Horizontal">
+                              <TextBlock x:Name="PreviewRangeIcon" Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                              <TextBlock x:Name="PreviewRangeText" Text="Предпросмотр" VerticalAlignment="Center"/>
+                            </StackPanel>
+                          </Button>
+                          <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="4" Padding="8,3">
+                            <StackPanel Orientation="Horizontal">
+                              <TextBlock x:Name="TrimDurationLabel" Text="Длительность:" FontSize="10" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                              <TextBlock x:Name="TrimDurationText" Text="00:00" FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                          </Border>
+                        </StackPanel>
+
+                        <!-- Save & Cancel Actions -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                          <Button x:Name="SaveFragmentButton" Content="Сохранить фрагмент" Style="{DynamicResource PrimaryButton}" Click="SaveFragmentClick" Padding="14,5" MinHeight="28" FontSize="11" Margin="0,0,8,0"/>
+                          <Button x:Name="CancelTrimButton" Content="Отмена" Style="{DynamicResource QuietButton}" Click="CancelTrimClick" Padding="12,5" MinHeight="28" FontSize="11"/>
+                        </StackPanel>
+                      </Grid>
+
+                      <!-- Export Progress Panel -->
+                      <Grid x:Name="TrimProgressPanel" Visibility="Collapsed" Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto"/>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="TrimProgressStatus" Text="Сохранение фрагмента…" Foreground="{DynamicResource Accent}" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <ProgressBar x:Name="TrimProgressBar" Grid.Column="1" Height="6" Minimum="0" Maximum="100" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBlock x:Name="TrimProgressPercent" Grid.Column="2" Text="0%" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource Text}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <Button x:Name="CancelExportButton" Grid.Column="3" Content="Отмена" Click="CancelExportClick" Padding="10,3" MinHeight="24" FontSize="10"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
               </Grid>
             </Border>
             <!-- Clip Actions & Details Bar -->
@@ -158,7 +284,7 @@
         </Border>
         <ListBox x:Name="ClipList" ItemsSource="{Binding FilteredClips}" SelectedItem="{Binding SelectedClip}" SelectionChanged="SelectionChanged" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" Visibility="{Binding HasClips, Converter={StaticResource BoolVisibility}}" HorizontalContentAlignment="Stretch">
           <ListBox.ItemsPanel><ItemsPanelTemplate><UniformGrid x:Name="ClipUniformGrid" Columns="4"/></ItemsPanelTemplate></ListBox.ItemsPanel>
-          <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="7,0,7,14"/><Setter Property="Cursor" Value="Hand"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="Tile" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="7" ClipToBounds="True"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="Tile" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Tile" Property="Background" Value="{DynamicResource SurfaceRaised}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
+          <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="7,0,7,14"/><Setter Property="Cursor" Value="Hand"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><EventSetter Event="PreviewMouseLeftButtonDown" Handler="OnClipItemClicked"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="Tile" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="7" ClipToBounds="True"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="Tile" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Tile" Property="Background" Value="{DynamicResource SurfaceRaised}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
           <ListBox.ItemTemplate><DataTemplate><Grid><Grid.RowDefinitions><RowDefinition Height="142"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Grid Grid.Row="0" Background="{DynamicResource PlayerBackground}"><TextBlock Text="H / R" FontSize="26" Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5"/><Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/><Border Background="#D00C1013" CornerRadius="3" Padding="6,3" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="9"><TextBlock Text="{Binding Duration}" FontSize="10" FontFamily="Consolas" Foreground="#FFFFFF"/></Border></Grid><StackPanel Grid.Row="1" Margin="14"><TextBlock Text="{Binding EventLabel}" Foreground="{DynamicResource Accent}" FontSize="10" FontWeight="SemiBold"/><TextBlock Text="{Binding Detail}" Foreground="{DynamicResource Muted}" FontSize="10" Margin="0,7,0,0"/><TextBlock Text="{Binding FileName}" FontSize="9" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0"/></StackPanel></Grid></DataTemplate></ListBox.ItemTemplate>
         </ListBox>
       </StackPanel>

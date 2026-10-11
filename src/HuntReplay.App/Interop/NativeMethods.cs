@@ -45,9 +45,11 @@ internal static class NativeMethods
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void PacketCallback(IntPtr user, in NativePacket packet);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void LogCallback(IntPtr user, int level, IntPtr message);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void DeviceCallback(IntPtr user, in NativeDevice device);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int hr_trim_progress_callback(IntPtr user, double progress);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_abi_version();
-    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] private static extern IntPtr hr_last_error();
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr hr_last_error();
+    internal static string? GetLastError() => Marshal.PtrToStringUni(hr_last_error());
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_devices(DeviceCallback callback, IntPtr user);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_probe(in NativeConfig config);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int hr_start(in NativeConfig config,
@@ -76,6 +78,15 @@ internal static class NativeMethods
     internal static extern int hr_player_preview(IntPtr player, double seconds, int maxWidth, out IntPtr pixels, out int width, out int height, out int stride);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int hr_player_set_volume(IntPtr player, float volume);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal static extern int hr_trim(
+        string source_path,
+        string target_path,
+        double start_seconds,
+        double end_seconds,
+        int accurate,
+        hr_trim_progress_callback? progress_cb,
+        IntPtr user);
 
     internal static void Check(int result)
     {

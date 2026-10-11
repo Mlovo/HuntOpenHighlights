@@ -29,6 +29,14 @@ public sealed class StudioSettings
     public StudioSettings Clone() => JsonSerializer.Deserialize<StudioSettings>(
         JsonSerializer.Serialize(this, JsonOptions), JsonOptions)!;
 
+    public bool IsEquivalent(StudioSettings? other)
+    {
+        if (other is null) return false;
+        string a = JsonSerializer.Serialize(this, JsonOptions);
+        string b = JsonSerializer.Serialize(other, JsonOptions);
+        return string.Equals(a, b, StringComparison.Ordinal);
+    }
+
     public void Validate()
     {
         if (SchemaVersion != 1) throw new InvalidDataException("Неподдерживаемая версия config.json.");

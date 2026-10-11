@@ -33,7 +33,7 @@ public static class UpdateCheckerService
     public static string GetCurrentVersionString()
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version;
-        return version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.5";
+        return version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.6";
     }
 
     public static async Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default)

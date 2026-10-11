@@ -1,0 +1,155 @@
+<UserControl x:Class="HuntReplay.App.Controls.RangeSlider"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             Height="32" VerticalAlignment="Center" Focusable="True" Cursor="Hand"
+             SizeChanged="OnControlSizeChanged">
+    <UserControl.Resources>
+        <!-- Start Handle Style & Template -->
+        <Style x:Key="StartThumbStyle" TargetType="Thumb">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Cursor" Value="SizeWE"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="HandleBorder"
+                                Width="14" Height="26"
+                                Background="{DynamicResource Accent}"
+                                BorderBrush="{DynamicResource Border}"
+                                BorderThickness="1.5"
+                                CornerRadius="4,1,1,4"
+                                SnapsToDevicePixels="True">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.4" Direction="270"/>
+                            </Border.Effect>
+                            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <Rectangle Width="1.5" Height="10" Fill="{DynamicResource AccentDark}" Margin="0,0,1.5,0"/>
+                                    <Rectangle Width="1.5" Height="10" Fill="{DynamicResource AccentDark}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HandleBorder" Property="BorderBrush" Value="{DynamicResource AccentDark}"/>
+                                <Setter TargetName="HandleBorder" Property="Background" Value="#DDEAB8"/>
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="HandleBorder" Property="Background" Value="#EAF5C8"/>
+                                <Setter TargetName="HandleBorder" Property="BorderBrush" Value="{DynamicResource AccentDark}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- End Handle Style & Template -->
+        <Style x:Key="EndThumbStyle" TargetType="Thumb">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Cursor" Value="SizeWE"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="HandleBorder"
+                                Width="14" Height="26"
+                                Background="{DynamicResource Accent}"
+                                BorderBrush="{DynamicResource Border}"
+                                BorderThickness="1.5"
+                                CornerRadius="1,4,4,1"
+                                SnapsToDevicePixels="True">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.4" Direction="270"/>
+                            </Border.Effect>
+                            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <Rectangle Width="1.5" Height="10" Fill="{DynamicResource AccentDark}" Margin="0,0,1.5,0"/>
+                                    <Rectangle Width="1.5" Height="10" Fill="{DynamicResource AccentDark}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HandleBorder" Property="BorderBrush" Value="{DynamicResource AccentDark}"/>
+                                <Setter TargetName="HandleBorder" Property="Background" Value="#DDEAB8"/>
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="HandleBorder" Property="Background" Value="#EAF5C8"/>
+                                <Setter TargetName="HandleBorder" Property="BorderBrush" Value="{DynamicResource AccentDark}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Playhead Handle Style & Template -->
+        <Style x:Key="PlayheadThumbStyle" TargetType="Thumb">
+            <Setter Property="Width" Value="10"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid Width="10" Height="28" Background="Transparent" SnapsToDevicePixels="True">
+                            <Polygon Points="1,0 9,0 5,6" Fill="{DynamicResource Accent}" HorizontalAlignment="Center" VerticalAlignment="Top"/>
+                            <Rectangle Width="2" Height="22" Fill="{DynamicResource Text}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,6,0,0"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid x:Name="RootGrid" Background="Transparent" ClipToBounds="False"
+          PreviewMouseLeftButtonDown="OnTrackMouseDown">
+        <!-- Full-width base track background -->
+        <Border x:Name="BaseTrack" Height="6" CornerRadius="3"
+                Background="{DynamicResource Border}" VerticalAlignment="Center"/>
+
+        <!-- Canvas positioning dynamic regions and thumbs -->
+        <Canvas x:Name="TrackCanvas" ClipToBounds="False" Height="32" VerticalAlignment="Center">
+            <!-- Dimmed Left Region (0 to RangeStart) -->
+            <Border x:Name="UnselectedLeftTrack" Height="6" Canvas.Top="13"
+                    Background="#80080C0E" CornerRadius="3,0,0,3"/>
+
+            <!-- Selected Fragment Highlight Bar (RangeStart to RangeEnd) -->
+            <Border x:Name="SelectedRangeBar" Height="8" Canvas.Top="12" CornerRadius="3"
+                    Background="{DynamicResource Accent}"
+                    Cursor="SizeAll"
+                    PreviewMouseLeftButtonDown="OnRangeBarMouseDown"
+                    PreviewMouseMove="OnRangeBarMouseMove"
+                    PreviewMouseLeftButtonUp="OnRangeBarMouseUp"
+                    ToolTip="Перетащите, чтобы сдвинуть весь фрагмент"/>
+
+            <!-- Dimmed Right Region (RangeEnd to Maximum) -->
+            <Border x:Name="UnselectedRightTrack" Height="6" Canvas.Top="13"
+                    Background="#80080C0E" CornerRadius="0,3,3,0"/>
+
+            <!-- Playhead Scrubber (rendered beneath boundary handles so it never interferes with grabbing them) -->
+            <Thumb x:Name="PlayheadThumb" Style="{StaticResource PlayheadThumbStyle}" Canvas.Top="2"
+                   DragStarted="OnPlayheadDragStarted"
+                   DragDelta="OnPlayheadDragDelta"
+                   DragCompleted="OnPlayheadDragCompleted"
+                   ToolTip="Текущая позиция воспроизведения"/>
+
+            <!-- Start Boundary Handle -->
+            <Thumb x:Name="StartThumb" Style="{StaticResource StartThumbStyle}" Canvas.Top="3"
+                   DragStarted="OnStartThumbDragStarted"
+                   DragDelta="OnStartThumbDragDelta"
+                   DragCompleted="OnStartThumbDragCompleted"
+                   ToolTip="Начало фрагмента"/>
+
+            <!-- End Boundary Handle -->
+            <Thumb x:Name="EndThumb" Style="{StaticResource EndThumbStyle}" Canvas.Top="3"
+                   DragStarted="OnEndThumbDragStarted"
+                   DragDelta="OnEndThumbDragDelta"
+                   DragCompleted="OnEndThumbDragCompleted"
+                   ToolTip="Конец фрагмента"/>
+        </Canvas>
+    </Grid>
+</UserControl>

@@ -151,6 +151,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
             // Settings
             "Settings.Notice" => en ? "Changes will restart the buffer. Pending highlights will be saved first." : "Изменения перезапустят буфер. Ожидающие хайлайты сначала будут сохранены.",
             "Settings.Save" => en ? "Save Settings" : "Сохранить настройки",
+            "Settings.UnsavedChangesTitle" => en ? "Unsaved Settings" : "Несохранённые настройки",
+            "Settings.UnsavedChangesPrompt" => en ? "You have unsaved changes in settings. Would you like to save them before leaving?" : "У вас есть несохранённые изменения в настройках. Сохранить их перед переходом?",
             "Settings.TabVideo" => en ? "Video" : "Видео",
             "Settings.TabAudio" => en ? "Audio" : "Аудио",
             "Settings.TabReplay" => en ? "Buffer & Events" : "Буфер и события",

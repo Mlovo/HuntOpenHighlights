@@ -8,9 +8,12 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using HuntReplay.App.Controls;
 using HuntReplay.App.Interop;
 using HuntReplay.App.Services;
 using HuntReplay.App.ViewModels;
+using HuntReplay.Core.Media;
+using HuntReplay.Core.Storage;
 
 namespace HuntReplay.App.Views;
 
@@ -30,12 +33,29 @@ public partial class GalleryView : UserControl
     private double currentVolume = 1.0;
     private double lastNonZeroVolume = 1.0;
 
+    // Trimming Mode State
+    private bool isTrimMode;
+    private bool isPreviewingFragment;
+    private bool isExporting;
+    private double trimStart;
+    private double trimEnd;
+    private const double MinTrimDuration = 0.5;
+    private CancellationTokenSource? exportCts;
+
+    // Async Seek Infrastructure for Smooth Scrubbing
+    private readonly object asyncSeekLock = new();
+    private double? pendingLiveSeekTime;
+    private bool isAsyncSeeking;
+    private bool isLiveSeeking;
+
     public GalleryView()
     {
         InitializeComponent();
         timer.Tick += OnTimerTick;
         ClipList.SizeChanged += OnClipListSizeChanged;
         Unloaded += (_, _) => Close();
+        LocalizationService.Instance.PropertyChanged += (_, _) => UpdateLocalizedLabels();
+        UpdateLocalizedLabels();
     }
 
     private void OnTimerTick(object? sender, EventArgs e)
@@ -46,6 +66,8 @@ public partial class GalleryView : UserControl
         {
             playing = false;
             PlayButton.Content = "▶";
+            if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
+            if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Предпросмотр", "Preview");
             timer.Stop();
         }
         if (isPlaying == 1)
@@ -64,7 +86,30 @@ public partial class GalleryView : UserControl
                 bitmap.Unlock();
             }
 
-            if (!dragging)
+            if (isTrimMode)
+            {
+                if (isPreviewingFragment && currentPts >= trimEnd)
+                {
+                    playing = false;
+                    PlayButton.Content = "▶";
+                    if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
+                    if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Предпросмотр", "Preview");
+                    NativeMethods.hr_player_pause(playerHandle);
+                    timer.Stop();
+                    isPreviewingFragment = false;
+
+                    NativeMethods.hr_player_seek(playerHandle, trimEnd);
+                    RefreshCurrentFrame();
+                    TrimSlider.Playhead = trimEnd;
+                    PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(trimEnd)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+                }
+                else
+                {
+                    TrimSlider.Playhead = currentPts;
+                    PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(currentPts)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+                }
+            }
+            else if (!dragging)
             {
                 updating = true;
                 Seek.Value = currentPts;
@@ -97,6 +142,30 @@ public partial class GalleryView : UserControl
 
         PreviewCard.Visibility = Visibility.Collapsed;
 
+        lock (asyncSeekLock)
+        {
+            pendingLiveSeekTime = null;
+        }
+
+        if (isTrimMode)
+        {
+            if (exportCts is not null)
+            {
+                exportCts.Cancel();
+                exportCts.Dispose();
+                exportCts = null;
+            }
+            isTrimMode = false;
+            isPreviewingFragment = false;
+            isExporting = false;
+            TrimToolbar.Visibility = Visibility.Collapsed;
+            TrimProgressPanel.Visibility = Visibility.Collapsed;
+            TrimSlider.Visibility = Visibility.Collapsed;
+            Seek.Visibility = Visibility.Visible;
+        }
+
+        TrimButton.IsEnabled = false;
+
         IntPtr handleToClose = IntPtr.Zero;
         lock (playerLock)
         {
@@ -121,6 +190,19 @@ public partial class GalleryView : UserControl
         PositionText.Text = "00:00 / 00:00";
         PlayerHint.Visibility = Visibility.Visible;
         PlayerHintText.Text = LocalizationService.Instance["Gallery.SelectClipHint"];
+    }
+
+    private void OnClipItemClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListBoxItem item && item.DataContext is ClipViewModel clip)
+        {
+            if (playerHandle == IntPtr.Zero || currentPath != clip.Clip.FullPath)
+            {
+                Close();
+                currentPath = clip.Clip.FullPath;
+                LoadVideo(currentPath);
+            }
+        }
     }
 
     private void SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -177,6 +259,9 @@ public partial class GalleryView : UserControl
             if (naturalDuration > 0) Seek.Maximum = naturalDuration;
             PositionText.Text = $"00:00 / {TimeSpan.FromSeconds(naturalDuration):mm\\:ss}";
             NativeMethods.hr_player_set_volume(opened, (float)currentVolume);
+
+            bool canTrim = naturalDuration >= MinTrimDuration;
+            TrimButton.IsEnabled = canTrim;
 
             PreloadThumbnails(opened, naturalDuration);
         }
@@ -242,6 +327,11 @@ public partial class GalleryView : UserControl
     private void PlayPause(object sender, RoutedEventArgs e)
     {
         if (playerHandle == IntPtr.Zero) return;
+        if (isTrimMode)
+        {
+            PreviewRangeClick(sender, e);
+            return;
+        }
         playing = !playing;
         PlayButton.Content = playing ? "Ⅱ" : "▶";
         if (playing)
@@ -414,16 +504,14 @@ public partial class GalleryView : UserControl
         Seek.Value = target;
         PositionText.Text = $"{TimeSpan.FromSeconds(target):mm\\:ss} / {TimeSpan.FromSeconds(naturalDuration):mm\\:ss}";
         updating = false;
-        NativeMethods.hr_player_seek(playerHandle, target);
-        RefreshCurrentFrame();
+        ScheduleAsyncSeek(target);
     }
 
     private void SeekChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (!updating && !dragging && Seek.IsEnabled && playerHandle != IntPtr.Zero)
         {
-            NativeMethods.hr_player_seek(playerHandle, Seek.Value);
-            RefreshCurrentFrame();
+            ScheduleAsyncSeek(Seek.Value);
         }
     }
 
@@ -443,12 +531,75 @@ public partial class GalleryView : UserControl
         {
             bitmap.Unlock();
         }
-        PositionText.Text = $"{TimeSpan.FromSeconds(Seek.Value):mm\\:ss} / {TimeSpan.FromSeconds(naturalDuration):mm\\:ss}";
+
+        if (!isTrimMode)
+        {
+            PositionText.Text = $"{TimeSpan.FromSeconds(Seek.Value):mm\\:ss} / {TimeSpan.FromSeconds(naturalDuration):mm\\:ss}";
+        }
+        else
+        {
+            PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(TrimSlider.Playhead)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+        }
+    }
+
+    private void ScheduleAsyncSeek(double timestamp)
+    {
+        if (playerHandle == IntPtr.Zero || naturalDuration <= 0) return;
+
+        lock (asyncSeekLock)
+        {
+            pendingLiveSeekTime = timestamp;
+            if (isAsyncSeeking) return;
+            isAsyncSeeking = true;
+        }
+
+        Task.Run(() =>
+        {
+            while (true)
+            {
+                double target;
+                lock (asyncSeekLock)
+                {
+                    if (!pendingLiveSeekTime.HasValue)
+                    {
+                        isAsyncSeeking = false;
+                        break;
+                    }
+                    target = pendingLiveSeekTime.Value;
+                    pendingLiveSeekTime = null;
+                }
+
+                lock (playerLock)
+                {
+                    if (playerHandle != IntPtr.Zero)
+                    {
+                        NativeMethods.hr_player_seek(playerHandle, target);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                Dispatcher.BeginInvoke(new Action(RefreshCurrentFrame), DispatcherPriority.Render);
+            }
+        });
     }
 
     private void VisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (e.NewValue is false) Close();
+        if (e.NewValue is false)
+        {
+            Close();
+        }
+        else if (e.NewValue is true)
+        {
+            if (playerHandle == IntPtr.Zero && ClipList?.SelectedItem is ClipViewModel clip)
+            {
+                currentPath = clip.Clip.FullPath;
+                LoadVideo(currentPath);
+            }
+        }
     }
 
     private void VolumeButtonClick(object sender, RoutedEventArgs e)
@@ -536,5 +687,558 @@ public partial class GalleryView : UserControl
         }
         return null;
     }
+
+    #region Video Trimming Feature
+
+    private void TrimButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (playerHandle == IntPtr.Zero || naturalDuration < MinTrimDuration) return;
+        EnterTrimMode();
+    }
+
+    public void EnterTrimMode()
+    {
+        if (playerHandle == IntPtr.Zero || naturalDuration < MinTrimDuration) return;
+        if (isTrimMode) return;
+
+        if (playing)
+        {
+            playing = false;
+            PlayButton.Content = "▶";
+            NativeMethods.hr_player_pause(playerHandle);
+            timer.Stop();
+        }
+
+        isTrimMode = true;
+        isPreviewingFragment = false;
+
+        PreviewCard.Visibility = Visibility.Collapsed;
+        previewCts?.Cancel();
+        previewCts?.Dispose();
+        previewCts = null;
+
+        trimStart = 0.0;
+        trimEnd = naturalDuration;
+
+        TrimSlider.Minimum = 0.0;
+        TrimSlider.Maximum = naturalDuration;
+        TrimSlider.MinRange = MinTrimDuration;
+        TrimSlider.RangeStart = trimStart;
+        TrimSlider.RangeEnd = trimEnd;
+        TrimSlider.Playhead = Seek.Value;
+
+        Seek.Visibility = Visibility.Collapsed;
+        TrimSlider.Visibility = Visibility.Visible;
+        TrimToolbar.Visibility = Visibility.Visible;
+        TrimProgressPanel.Visibility = Visibility.Collapsed;
+
+        TrimButton.IsEnabled = false;
+ 
+        UpdateTrimTimeDisplays();
+        Focus();
+    }
+
+    private void CancelTrimClick(object sender, RoutedEventArgs e)
+    {
+        ExitTrimMode();
+    }
+
+    public void ExitTrimMode()
+    {
+        if (!isTrimMode) return;
+
+        if (playing)
+        {
+            playing = false;
+            PlayButton.Content = "▶";
+            if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
+            if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Предпросмотр", "Preview");
+            NativeMethods.hr_player_pause(playerHandle);
+            timer.Stop();
+        }
+
+        if (exportCts is not null)
+        {
+            exportCts.Cancel();
+            exportCts.Dispose();
+            exportCts = null;
+        }
+
+        isTrimMode = false;
+        isPreviewingFragment = false;
+        isExporting = false;
+
+        TrimToolbar.Visibility = Visibility.Collapsed;
+        TrimProgressPanel.Visibility = Visibility.Collapsed;
+        TrimSlider.Visibility = Visibility.Collapsed;
+        Seek.Visibility = Visibility.Visible;
+
+        bool canTrim = playerHandle != IntPtr.Zero && naturalDuration >= MinTrimDuration;
+        TrimButton.IsEnabled = canTrim;
+
+        if (playerHandle != IntPtr.Zero && naturalDuration > 0)
+        {
+            NativeMethods.hr_player_get_state(playerHandle, out _, out _, out double currentPts);
+            updating = true;
+            Seek.Value = Math.Clamp(currentPts, 0.0, naturalDuration);
+            PositionText.Text = $"{TimeSpan.FromSeconds(Seek.Value):mm\\:ss} / {TimeSpan.FromSeconds(naturalDuration):mm\\:ss}";
+            updating = false;
+        }
+    }
+
+    private void OnTrimSliderLiveSeek(object sender, RangeSeekEventArgs e)
+    {
+        if (playerHandle == IntPtr.Zero || naturalDuration <= 0) return;
+        isLiveSeeking = true;
+        try
+        {
+            TrimSlider.Playhead = e.Timestamp;
+            PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(e.Timestamp)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+            UpdateTrimTimeDisplays();
+            ScheduleAsyncSeek(e.Timestamp);
+        }
+        finally
+        {
+            isLiveSeeking = false;
+        }
+    }
+
+    private void OnTrimDragStarted(object sender, RoutedEventArgs e)
+    {
+        if (playing)
+        {
+            PauseTrimPlayback();
+        }
+    }
+
+    private void OnTrimDragCompleted(object sender, RoutedEventArgs e)
+    {
+        if (playerHandle == IntPtr.Zero || naturalDuration <= 0) return;
+        ScheduleAsyncSeek(TrimSlider.Playhead);
+    }
+
+    private void OnTrimSelectionStartChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        trimStart = e.NewValue;
+        UpdateTrimTimeDisplays();
+    }
+
+    private void OnTrimSelectionEndChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        trimEnd = e.NewValue;
+        UpdateTrimTimeDisplays();
+    }
+
+    private void OnTrimPlayheadChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero || playing || isLiveSeeking || TrimSlider.IsDragging) return;
+        ScheduleAsyncSeek(e.NewValue);
+        PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(e.NewValue)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+    }
+
+    private void UpdateTrimTimeDisplays()
+    {
+        if (TrimStartText is not null)
+            TrimStartText.Text = VideoTrimmingFormatters.FormatTime(trimStart);
+        if (TrimEndText is not null)
+            TrimEndText.Text = VideoTrimmingFormatters.FormatTime(trimEnd);
+        if (TrimDurationText is not null)
+            TrimDurationText.Text = VideoTrimmingFormatters.FormatTime(Math.Max(0.0, trimEnd - trimStart));
+    }
+
+    private void StepStartMinusClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        SetTrimStart(VideoTrimmingFormatters.StepTime(trimStart, -0.1, 0.0, trimEnd - MinTrimDuration));
+    }
+
+    private void StepStartPlusClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        SetTrimStart(VideoTrimmingFormatters.StepTime(trimStart, +0.1, 0.0, trimEnd - MinTrimDuration));
+    }
+
+    private void StepEndMinusClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        SetTrimEnd(VideoTrimmingFormatters.StepTime(trimEnd, -0.1, trimStart + MinTrimDuration, naturalDuration));
+    }
+
+    private void StepEndPlusClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        SetTrimEnd(VideoTrimmingFormatters.StepTime(trimEnd, +0.1, trimStart + MinTrimDuration, naturalDuration));
+    }
+
+    private void SetTrimStart(double newStart)
+    {
+        trimStart = Math.Clamp(newStart, 0.0, trimEnd - MinTrimDuration);
+        TrimSlider.RangeStart = trimStart;
+        TrimSlider.Playhead = trimStart;
+        UpdateTrimTimeDisplays();
+        PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(trimStart)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+        ScheduleAsyncSeek(trimStart);
+    }
+
+    private void SetTrimEnd(double newEnd)
+    {
+        trimEnd = Math.Clamp(newEnd, trimStart + MinTrimDuration, naturalDuration);
+        TrimSlider.RangeEnd = trimEnd;
+        TrimSlider.Playhead = trimEnd;
+        UpdateTrimTimeDisplays();
+        PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(trimEnd)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+        ScheduleAsyncSeek(trimEnd);
+    }
+
+    private void JumpStartClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        if (playing) PauseTrimPlayback();
+        TrimSlider.Playhead = trimStart;
+        PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(trimStart)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+        ScheduleAsyncSeek(trimStart);
+    }
+
+    private void JumpEndClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        if (playing) PauseTrimPlayback();
+        TrimSlider.Playhead = trimEnd;
+        PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(trimEnd)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+        ScheduleAsyncSeek(trimEnd);
+    }
+
+    private void MarkInClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        NativeMethods.hr_player_get_state(playerHandle, out _, out _, out double currentPts);
+        SetTrimStart(currentPts);
+    }
+
+    private void MarkOutClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+        NativeMethods.hr_player_get_state(playerHandle, out _, out _, out double currentPts);
+        SetTrimEnd(currentPts);
+    }
+
+    private void PauseTrimPlayback()
+    {
+        playing = false;
+        PlayButton.Content = "▶";
+        if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
+        if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Предпросмотр", "Preview");
+        NativeMethods.hr_player_pause(playerHandle);
+        timer.Stop();
+        isPreviewingFragment = false;
+    }
+
+    private void PreviewRangeClick(object sender, RoutedEventArgs e)
+    {
+        if (!isTrimMode || playerHandle == IntPtr.Zero) return;
+
+        if (playing)
+        {
+            PauseTrimPlayback();
+        }
+        else
+        {
+            NativeMethods.hr_player_get_state(playerHandle, out _, out _, out double currentPts);
+            if (currentPts < trimStart || currentPts >= trimEnd - 0.1)
+            {
+                NativeMethods.hr_player_seek(playerHandle, trimStart);
+                RefreshCurrentFrame();
+                TrimSlider.Playhead = trimStart;
+            }
+
+            isPreviewingFragment = true;
+            playing = true;
+            PlayButton.Content = "Ⅱ";
+            if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE769";
+            if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Пауза", "Pause");
+            NativeMethods.hr_player_play(playerHandle);
+            timer.Start();
+        }
+    }
+
+    private async void SaveFragmentClick(object sender, RoutedEventArgs e)
+    {
+        if (playerHandle == IntPtr.Zero || string.IsNullOrEmpty(currentPath) || !File.Exists(currentPath)) return;
+        if (isExporting) return;
+
+        double start = TrimSlider.RangeStart;
+        double end = TrimSlider.RangeEnd;
+
+        if (double.IsNaN(start) || double.IsNaN(end) || start < 0.0 || end > naturalDuration)
+        {
+            UpdateStatusMessage(GetLoc("Некорректные границы фрагмента.", "Invalid trim boundaries."));
+            return;
+        }
+
+        if (end <= start || end - start < MinTrimDuration)
+        {
+            UpdateStatusMessage(GetLoc("Фрагмент должен быть не менее 0.5 с.", "Fragment must be at least 0.5s."));
+            return;
+        }
+
+        if (playing) PauseTrimPlayback();
+
+        string defaultCandidate = VideoTrimmingService.GenerateDefaultTargetPath(currentPath);
+        string initialDir = Path.GetDirectoryName(defaultCandidate) ?? "";
+        string defaultName = Path.GetFileName(defaultCandidate);
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = GetLoc("Сохранить фрагмент видео", "Save Video Fragment"),
+            InitialDirectory = initialDir,
+            FileName = defaultName,
+            Filter = GetLoc("Видео MP4 (*.mp4)|*.mp4", "MP4 Video (*.mp4)|*.mp4"),
+            DefaultExt = ".mp4",
+            AddExtension = true,
+            OverwritePrompt = true
+        };
+
+        var window = Window.GetWindow(this);
+        if (dialog.ShowDialog(window) != true) return;
+
+        string targetPath = dialog.FileName;
+
+        if (string.Equals(Path.GetFullPath(targetPath), Path.GetFullPath(currentPath), StringComparison.OrdinalIgnoreCase))
+        {
+            string errorMsg = GetLoc("Нельзя перезаписывать исходный видеофайл.", "Cannot overwrite the source video file.");
+            MessageBox.Show(window, errorMsg,
+                GetLoc("Ошибка экспорта", "Export Error"),
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        isExporting = true;
+        exportCts?.Dispose();
+        exportCts = new CancellationTokenSource();
+        var token = exportCts.Token;
+
+        SetTrimControlsEnabled(false);
+        TrimProgressPanel.Visibility = Visibility.Visible;
+        TrimProgressBar.Value = 0;
+        TrimProgressPercent.Text = "0%";
+        CancelExportButton.IsEnabled = true;
+        CancelExportButton.Content = GetLoc("Отмена", "Cancel");
+
+        var progress = new Progress<double>(p =>
+        {
+            if (!isExporting) return;
+            int percentage = (int)Math.Clamp(Math.Round(p * 100.0), 0, 100);
+            TrimProgressBar.Value = percentage;
+            TrimProgressPercent.Text = $"{percentage}%";
+            TrimProgressStatus.Text = string.Format(
+                GetLoc("Сохранение фрагмента… {0}%", "Saving fragment… {0}%"), percentage);
+        });
+
+        try
+        {
+            string exportedFile = await VideoTrimmingService.Instance.TrimVideoAsync(
+                currentPath, targetPath, start, end, accurate: false, progress: progress, cancellationToken: token);
+
+            if (!File.Exists(exportedFile))
+            {
+                throw new IOException("Файл фрагмента отсутствует на диске после сохранения.");
+            }
+
+            await HandleExportSuccess(exportedFile, start, end);
+        }
+        catch (OperationCanceledException)
+        {
+            UpdateStatusMessage(GetLoc("Сохранение отменено.", "Export cancelled."));
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusMessage(GetLoc("Ошибка экспорта: ", "Export error: ") + ex.Message);
+            try { if (File.Exists(targetPath)) File.Delete(targetPath); } catch { }
+        }
+        finally
+        {
+            isExporting = false;
+            TrimProgressPanel.Visibility = Visibility.Collapsed;
+            SetTrimControlsEnabled(true);
+            exportCts?.Dispose();
+            exportCts = null;
+        }
+    }
+
+    private void CancelExportClick(object sender, RoutedEventArgs e)
+    {
+        if (exportCts is not null && !exportCts.IsCancellationRequested)
+        {
+            CancelExportButton.IsEnabled = false;
+            CancelExportButton.Content = GetLoc("Отмена…", "Cancelling…");
+            exportCts.Cancel();
+        }
+    }
+
+    private async Task HandleExportSuccess(string exportedFile, double start, double end)
+    {
+        var mainVm = DataContext as MainViewModel;
+        string appDataRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HuntReplayStudio");
+        string libraryRoot = Path.Combine(appDataRoot, "library");
+        string clipsDir = Path.GetDirectoryName(currentPath!) ?? "";
+
+        bool isInsideClipsDir = !string.IsNullOrEmpty(clipsDir) &&
+            string.Equals(Path.GetFullPath(Path.GetDirectoryName(exportedFile)!), Path.GetFullPath(clipsDir), StringComparison.OrdinalIgnoreCase);
+
+        if (isInsideClipsDir)
+        {
+            try
+            {
+                var library = new ClipLibrary(clipsDir, libraryRoot);
+                var metadata = new ClipMetadata
+                {
+                    FileName = Path.GetFileName(exportedFile),
+                    EventTag = "TRIMMED",
+                    Events = ["TRIMMED"],
+                    GroupId = "",
+                    CreatedAt = DateTimeOffset.Now,
+                    DurationSeconds = Math.Max(0.1, end - start),
+                    Encoder = "stream copy",
+                    TruncatedStart = false,
+                    TruncatedEnd = false
+                };
+                var registeredClip = library.Register(exportedFile, metadata);
+                try
+                {
+                    NativeCaptureEngine.SaveThumbnail(exportedFile, registeredClip.ThumbnailPath);
+                }
+                catch { }
+
+                if (mainVm is not null)
+                {
+                    await mainVm.RefreshClipsAsync();
+                    mainVm.SelectedClip = mainVm.Clips.FirstOrDefault(c => c.Clip.Metadata.Id == registeredClip.Metadata.Id);
+                }
+            }
+            catch { }
+        }
+
+        try
+        {
+            System.Media.SystemSounds.Asterisk.Play();
+        }
+        catch { }
+
+        string saveNotice = (LocalizationService.Instance.IsEnglish ? "Fragment saved: " : "Фрагмент сохранён: ") + Path.GetFileName(exportedFile);
+        UpdateStatusMessage(saveNotice);
+
+        ExitTrimMode();
+    }
+
+    private void SetTrimControlsEnabled(bool enabled)
+    {
+        TrimSlider.IsEnabled = enabled;
+        SaveFragmentButton.IsEnabled = enabled;
+        CancelTrimButton.IsEnabled = enabled;
+        PreviewRangeButton.IsEnabled = enabled;
+        PlayButton.IsEnabled = enabled;
+        StepStartMinusButton.IsEnabled = enabled;
+        StepStartPlusButton.IsEnabled = enabled;
+        StepEndMinusButton.IsEnabled = enabled;
+        StepEndPlusButton.IsEnabled = enabled;
+        MarkInButton.IsEnabled = enabled;
+        MarkOutButton.IsEnabled = enabled;
+        JumpStartButton.IsEnabled = enabled;
+        JumpEndButton.IsEnabled = enabled;
+    }
+
+    private void UpdateStatusMessage(string message)
+    {
+        if (DataContext is MainViewModel mainVm)
+        {
+            try
+            {
+                var prop = typeof(MainViewModel).GetProperty("Message",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                prop?.SetValue(mainVm, message);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+        if (!isTrimMode) return;
+        if (SearchBox.IsKeyboardFocused) return;
+
+        switch (e.Key)
+        {
+            case Key.I:
+                MarkInClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+            case Key.O:
+                MarkOutClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+            case Key.Space:
+                PreviewRangeClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+            case Key.Escape:
+                ExitTrimMode();
+                e.Handled = true;
+                break;
+            case Key.Left:
+                if (Keyboard.Modifiers == ModifierKeys.Shift)
+                    SetTrimStart(trimStart - 1.0);
+                else
+                    SetTrimStart(trimStart - 0.1);
+                e.Handled = true;
+                break;
+            case Key.Right:
+                if (Keyboard.Modifiers == ModifierKeys.Shift)
+                    SetTrimStart(trimStart + 1.0);
+                else
+                    SetTrimStart(trimStart + 0.1);
+                e.Handled = true;
+                break;
+            case Key.Home:
+                JumpStartClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+            case Key.End:
+                JumpEndClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private string GetLoc(string ru, string en) =>
+        LocalizationService.Instance.IsEnglish ? en : ru;
+
+    private void UpdateLocalizedLabels()
+    {
+        bool en = LocalizationService.Instance.IsEnglish;
+        if (TrimButtonText is not null) TrimButtonText.Text = en ? "Trim Video" : "Обрезать видео";
+        if (TrimButton is not null) TrimButton.ToolTip = en ? "Trim and export video fragment" : "Обрезать и сохранить фрагмент";
+        if (SaveFragmentButton is not null) SaveFragmentButton.Content = en ? "Save Fragment" : "Сохранить фрагмент";
+        if (CancelTrimButton is not null) CancelTrimButton.Content = en ? "Cancel" : "Отмена";
+        if (CancelExportButton is not null) CancelExportButton.Content = en ? "Cancel" : "Отмена";
+        if (TrimStartLabel is not null) TrimStartLabel.Text = en ? "Start:" : "Начало:";
+        if (TrimEndLabel is not null) TrimEndLabel.Text = en ? "End:" : "Конец:";
+        if (TrimDurationLabel is not null) TrimDurationLabel.Text = en ? "Duration:" : "Длительность:";
+        if (PreviewRangeText is not null) PreviewRangeText.Text = isPreviewingFragment ? (en ? "Pause" : "Пауза") : (en ? "Preview" : "Предпросмотр");
+        if (JumpStartText is not null) JumpStartText.Text = en ? "To Start" : "К началу";
+        if (JumpStartButton is not null) JumpStartButton.ToolTip = en ? "Jump player to start [Home]" : "Перейти к началу фрагмента [Home]";
+        if (MarkInText is not null) MarkInText.Text = en ? "Set Start" : "Задать начало";
+        if (MarkInButton is not null) MarkInButton.ToolTip = en ? "Set start to current frame [I]" : "Установить начало по текущему кадру [I]";
+        if (JumpEndText is not null) JumpEndText.Text = en ? "To End" : "К концу";
+        if (JumpEndButton is not null) JumpEndButton.ToolTip = en ? "Jump player to end [End]" : "Перейти к концу фрагмента [End]";
+        if (MarkOutText is not null) MarkOutText.Text = en ? "Set End" : "Задать конец";
+        if (MarkOutButton is not null) MarkOutButton.ToolTip = en ? "Set end to current frame [O]" : "Установить конец по текущему кадру [O]";
+    }
+
+    #endregion
 }
 

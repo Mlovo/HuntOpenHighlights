@@ -2,6 +2,31 @@
 
 All notable changes to **HuntReplay Studio** are documented in this file.
 
+## [0.1.6] - 2026-10-11
+
+### Added
+- **Interactive Video Trimming in Gallery**:
+  - Two-handled interactive range slider to trim start and end points directly in the built-in video player.
+  - Keyframe-accurate lossless stream-copy trimming via native FFmpeg backend without re-encoding.
+  - Dedicated "Trim" button with progressive timecode readout (`00:00 / 00:00`), live slider feedback, auto-pausing playback on thumb drag to eliminate jitter, and automatic thumbnail update after trimming.
+- **Unsaved Settings Confirmation Dialog**:
+  - Built-in detection of pending configuration changes (`HasUnsavedSettings`).
+  - Safe confirmation prompt (*"You have unsaved changes in settings. Would you like to save them before leaving?"* / *"У вас есть несохранённые изменения в настройках. Сохранить их перед переходом?"*) with `[Yes]` / `[No]` / `[Cancel]` actions when switching tabs within Settings, navigating away to other pages (Dashboard, Gallery, Diagnostics), or closing/minimizing the window.
+  - Selecting "Yes" validates and applies settings cleanly; "No" discards modifications; "Cancel" aborts navigation and remains on the current view.
+- **Light & Dark Theme Switcher & Full Bilingual Localization**:
+  - Instant one-click theme switcher (`🌙 DARK` / `☀️ LIGHT`) with live palette swap across all UI controls.
+  - Complete Russian and English language support across all dialogs, controls, navigation, and system notifications.
+
+### Fixed
+- **Monitor Capture Alt-Tab & Minimize Robustness**:
+  - Fixed an issue where minimizing the game window (Alt-Tab) interrupted the recording buffer when "Selected Monitor" capture was active. Minimized window states (`IsIconic`) and active game process lifetimes (`HasGameProcess`) are now accurately tracked.
+- **Settings Switch Buffer Continuation**:
+  - Resolved buffer restart race condition when switching capture source from Game Window to Monitor during an active match.
+- **Gallery Clip Reload on Navigation**:
+  - Fixed clip viewer state retention when switching between views during video playback.
+
+---
+
 ## [0.1.5] - 2026-10-10
 
 ### Added

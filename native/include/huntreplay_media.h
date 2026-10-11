@@ -42,6 +42,7 @@ struct hr_player;
 typedef void (HR_CALL *hr_packet_callback)(void* user, const hr_packet* packet);
 typedef void (HR_CALL *hr_log_callback)(void* user, int32_t level, const char* utf8_message);
 typedef void (HR_CALL *hr_device_callback)(void* user, const hr_device* device);
+typedef int (HR_CALL *hr_trim_progress_callback)(void* user, double progress);
 
 HR_API int HR_CALL hr_abi_version();
 HR_API const wchar_t* HR_CALL hr_last_error(); // Thread-local, valid until next failing API call.
@@ -72,3 +73,10 @@ HR_API int HR_CALL hr_player_read_frame(hr_player* player, uint8_t* buffer, int3
 HR_API int HR_CALL hr_player_preview(hr_player* player, double seconds, int32_t max_width,
                                     uint8_t** pixels, int32_t* width, int32_t* height, int32_t* stride);
 HR_API int HR_CALL hr_player_set_volume(hr_player* player, float volume);
+HR_API int HR_CALL hr_trim(const wchar_t* source_path,
+                           const wchar_t* target_path,
+                           double start_seconds,
+                           double end_seconds,
+                           int32_t accurate,
+                           hr_trim_progress_callback progress_cb,
+                           void* user);

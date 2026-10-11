@@ -15,6 +15,7 @@ void player_get_state(hr_player*, int32_t*, int32_t*, double*);
 void player_read_frame(hr_player*, uint8_t*, int32_t, int32_t, int32_t, int32_t*, double*);
 void player_preview(hr_player*, double, int32_t, uint8_t**, int32_t*, int32_t*, int32_t*);
 void player_set_volume(hr_player*, float);
+void trim(const wchar_t*, const wchar_t*, double, double, bool, hr_trim_progress_callback, void*);
 thread_local std::wstring last_error;
 template<typename F> int guard(F operation) noexcept {
     try { operation(); last_error.clear(); return 0; }
@@ -143,4 +144,18 @@ int HR_CALL hr_player_preview(hr_player* player, double seconds, int32_t max_wid
 }
 int HR_CALL hr_player_set_volume(hr_player* player, float volume) {
     return hr::guard([&] { hr::player_set_volume(player, volume); });
+}
+int HR_CALL hr_trim(const wchar_t* source_path,
+                    const wchar_t* target_path,
+                    double start_seconds,
+                    double end_seconds,
+                    int32_t accurate,
+                    hr_trim_progress_callback progress_cb,
+                    void* user) {
+    return hr::guard([&] {
+        if (!source_path || !target_path || source_path[0] == L'\0' || target_path[0] == L'\0') {
+            throw std::runtime_error("Missing source or target path arguments.");
+        }
+        hr::trim(source_path, target_path, start_seconds, end_seconds, accurate != 0, progress_cb, user);
+    });
 }

@@ -238,6 +238,7 @@ public static partial class Program
         IpcCorrelationTests();
         DeviceSelectionTests();
         PlaybackDiagnosticsTests();
+        await VideoTrimmingTestsAsync();
         Console.WriteLine($"\n{passed} passed; {failed} failed.");
         return failed == 0 ? 0 : 1;
     }

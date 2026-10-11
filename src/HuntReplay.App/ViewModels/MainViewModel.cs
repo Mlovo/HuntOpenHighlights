@@ -55,7 +55,56 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ThemeService ThemeSvc => ThemeService.Instance;
     public string LanguageButtonLabel => Loc.IsRussian ? "RU  /  EN" : "EN  /  RU";
     public string ThemeButtonLabel => ThemeSvc.IsDark ? (Loc.IsRussian ? "🌙 ТЁМНАЯ" : "🌙 DARK") : (Loc.IsRussian ? "☀️ СВЕТЛАЯ" : "☀️ LIGHT");
-    public string Page { get => page; set { if (Set(ref page, value)) Notify(nameof(PageTitle)); } }
+    public string Page
+    {
+        get => page;
+        set
+        {
+            if (page == value) return;
+            if (page == "Settings" && HasUnsavedSettings)
+            {
+                _ = HandleUnsavedAndNavigateAsync(value);
+                return;
+            }
+            if (Set(ref page, value)) Notify(nameof(PageTitle));
+        }
+    }
+
+    public async Task<bool> ConfirmLeaveSettingsAsync()
+    {
+        if (!HasUnsavedSettings) return true;
+        var result = MessageBox.Show(
+            Application.Current.MainWindow,
+            Loc["Settings.UnsavedChangesPrompt"],
+            Loc["Settings.UnsavedChangesTitle"],
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            return await SaveSettingsDirectAsync();
+        }
+        if (result == MessageBoxResult.No)
+        {
+            RevertSettings();
+            return true;
+        }
+        return false;
+    }
+
+    private async Task HandleUnsavedAndNavigateAsync(string targetPage)
+    {
+        if (await ConfirmLeaveSettingsAsync())
+        {
+            if (Set(ref page, targetPage)) Notify(nameof(PageTitle));
+        }
+        else
+        {
+            // Re-trigger notification to ensure radio button stays on Settings
+            Notify(nameof(Page));
+        }
+    }
+
     public string PageTitle => Page switch
     {
         "Gallery" => Loc["PageTitle.Gallery"],
@@ -329,22 +378,43 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
                     if (stop.IsCancellationRequested || Busy || !await operation.WaitAsync(0)) return;
                     try
                     {
-                        var window = GameWindow.Find((int)pipe.Games.FirstOrDefault().Pid);
+                        int pid = (int)pipe.Games.FirstOrDefault().Pid;
+                        var window = GameWindow.Find(pid);
+                        bool gameRunning = window != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(pid);
+
                         if (window != lastGameWindow) { userPaused = false; retryCount = 0; nextRetry = 0; }
                         var previous = lastGameWindow; lastGameWindow = window;
                         var current = recorder.Status;
                         if (!current.Running && current.Native.ElapsedUs > 0)
                         {
                             await recorder.StopAsync();
-                            if (window != IntPtr.Zero || recorder.Settings.Video.Source == CaptureSource.Monitor) retryCount++;
+                            if (gameRunning || recorder.Settings.Video.Source == CaptureSource.Monitor) retryCount++;
                             nextRetry = Environment.TickCount64 + 5000;
                         }
-                        if (recorder.Settings.System.AutoBufferWithGame && !manuallyStarted && previous != IntPtr.Zero && window != previous)
-                            await recorder.StopAsync();
-                        if (window == IntPtr.Zero && previous != IntPtr.Zero && recorder.Settings.Video.Source == CaptureSource.HuntWindow)
-                            manuallyStarted = false;
+
+                        // When capturing game window directly, stop if the window disappeared.
+                        // When capturing monitor, keep running as long as the game process is running!
+                        if (recorder.Settings.System.AutoBufferWithGame && !manuallyStarted)
+                        {
+                            if (recorder.Settings.Video.Source == CaptureSource.HuntWindow)
+                            {
+                                if (previous != IntPtr.Zero && window == IntPtr.Zero)
+                                {
+                                    await recorder.StopAsync();
+                                    manuallyStarted = false;
+                                }
+                            }
+                            else if (recorder.Settings.Video.Source == CaptureSource.Monitor)
+                            {
+                                if (!gameRunning && recorder.Status.Running)
+                                {
+                                    await recorder.StopAsync();
+                                }
+                            }
+                        }
+
                         bool sourceAvailable = recorder.Settings.Video.Source == CaptureSource.Monitor || window != IntPtr.Zero;
-                        bool wanted = manuallyStarted || (recorder.Settings.System.AutoBufferWithGame && window != IntPtr.Zero);
+                        bool wanted = manuallyStarted || (recorder.Settings.System.AutoBufferWithGame && gameRunning);
                         if (wanted && sourceAvailable && !userPaused && !recorder.Status.Running && retryCount < 3 && Environment.TickCount64 >= nextRetry)
                         {
                             Busy = true;
@@ -362,6 +432,27 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+    }
+
+    public bool HasUnsavedSettings => !SettingsEdit.IsEquivalent(recorder.Settings);
+
+    public void RevertSettings()
+    {
+        SettingsEdit = recorder.Settings.Clone();
+    }
+
+    public async Task<bool> SaveSettingsDirectAsync()
+    {
+        try
+        {
+            await ApplyAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Error(ex);
+            return false;
+        }
     }
 
     private async Task ApplyAsync()
@@ -384,8 +475,15 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             await ReloadDevicesAsync();
             await RefreshClipsAsync();
             Message = Loc.IsEnglish ? "Settings saved to config.json." : "Настройки сохранены в config.json.";
-            if (wasRunning) await StartCurrentAsync();
-            log.Write(wasRunning
+            retryCount = 0; nextRetry = 0; userPaused = false;
+            int pid = (int)pipe.Games.FirstOrDefault().Pid;
+            bool gameActive = GameWindow.Find(pid) != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(pid);
+            bool shouldRun = wasRunning || (updated.System.AutoBufferWithGame && gameActive);
+            if (shouldRun)
+            {
+                await StartCurrentAsync();
+            }
+            log.Write(shouldRun
                 ? "Настройки применены. Буфер перезапущен с новым форматом."
                 : "Настройки применены. Буфер не запущен; ожидание игры или ручного запуска.");
         }

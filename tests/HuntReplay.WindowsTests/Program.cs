@@ -64,6 +64,8 @@ internal static class Program
             }));
         }
         ComboBoxPresentationTests();
+        GalleryViewTrimmingTests.RunAllTests();
+        RangeSliderStressTests.RunAllTests();
         Application.Current.Shutdown();
         Console.WriteLine($"\n{passed} WPF regressions passed; {failed} failed.");
         return failed == 0 ? 0 : 1;
@@ -144,6 +146,33 @@ internal static class Program
             }
             finally { BindingOperations.ClearAllBindings(box); }
         }));
+        Test("production theme: TabControl content text is light and not black", () => WithThemedWindow((_, host) =>
+        {
+            var tabControl = new TabControl();
+            var tab1 = new TabItem
+            {
+                Header = "Видео",
+                Content = new StackPanel
+                {
+                    Children = { new TextBlock { Text = "Источник захвата" } }
+                }
+            };
+            var tab2 = new TabItem { Header = "Аудио" };
+            tabControl.Items.Add(tab1);
+            tabControl.Items.Add(tab2);
+            tabControl.SelectedItem = tab1;
+            host.Children.Add(tabControl);
+            Pump();
+            tabControl.ApplyTemplate();
+            tabControl.UpdateLayout();
+            Pump();
+
+            var innerText = TextBlocks((DependencyObject)tab1.Content).FirstOrDefault(t => t.Text == "Источник захвата");
+            True(innerText != null);
+            var fg = innerText!.Foreground as SolidColorBrush;
+            True(fg != null);
+            False(fg!.Color == Colors.Black);
+        }));
     }
 
     private static ResourceDictionary LoadProductionTheme([CallerFilePath] string thisFile = "")
@@ -153,7 +182,7 @@ internal static class Program
         return (ResourceDictionary)XamlReader.Parse(xaml);
     }
 
-    private static void WithThemedWindow(Action<Window, StackPanel> test)
+    internal static void WithThemedWindow(Action<Window, StackPanel> test)
     {
         // The window is shown so popups and their item containers are really generated.
         var host = new StackPanel { Resources = LoadProductionTheme(), Width = 480 };
@@ -163,7 +192,7 @@ internal static class Program
         finally { window.Close(); Pump(); }
     }
 
-    private static IEnumerable<TextBlock> TextBlocks(DependencyObject root)
+    internal static IEnumerable<TextBlock> TextBlocks(DependencyObject root)
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
         {
@@ -206,13 +235,13 @@ internal static class Program
     private static string SelectedId(ComboBox box) => (box.SelectedItem as DeviceOption)?.Id
         ?? throw new InvalidOperationException("The displayed SelectedItem is null despite SelectedValue='" + box.SelectedValue + "'.");
 
-    private static void Pump()
+    internal static void Pump()
     {
         var frame = new DispatcherFrame();
         Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => frame.Continue = false));
         Dispatcher.PushFrame(frame);
     }
-    private static void Test(string name, Action test)
+    internal static void Test(string name, Action test)
     {
         try { test(); passed++; Console.WriteLine("PASS " + name); }
         catch (Exception ex)
@@ -222,9 +251,9 @@ internal static class Program
                 Console.WriteLine("::error title=WPF binding regression::" + (name + ": " + ex).Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A"));
         }
     }
-    private static void True(bool value) { if (!value) throw new InvalidOperationException("Expected true"); }
-    private static void False(bool value) => True(!value);
-    private static void Equal(object? expected, object? actual)
+    internal static void True(bool value) { if (!value) throw new InvalidOperationException("Expected true"); }
+    internal static void False(bool value) => True(!value);
+    internal static void Equal(object? expected, object? actual)
     {
         if (!Equals(expected, actual)) throw new InvalidOperationException($"Expected '{expected ?? "<null>"}', got '{actual ?? "<null>"}'");
     }
