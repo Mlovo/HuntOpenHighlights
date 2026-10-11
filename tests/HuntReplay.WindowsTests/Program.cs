@@ -19,56 +19,74 @@ internal static class Program
     [STAThread]
     public static int Main()
     {
-        // No window, native backend or real device is required, but real WPF binding,
-        // Selector coercion and dispatcher behavior must run on Windows / STA.
-        _ = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        foreach (int kind in new[] { 0, 1, 2 })
+        try
         {
-            Test($"device kind {kind}: default survives repeated refresh", () => WithSelector(kind, "", (s, box, read, _) =>
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
             {
-                for (int i = 0; i < 5; i++) { s.Refresh(Devices(kind)); Pump(); Equal("", read()); Equal("", box.SelectedValue); Equal("", SelectedId(box)); }
-            }));
-            Test($"device kind {kind}: explicit ID survives reordered/replaced items", () => WithSelector(kind, "second", (s, box, read, _) =>
+                Console.WriteLine("CRITICAL UNHANDLED EXCEPTION: " + e.ExceptionObject);
+            };
+            // No window, native backend or real device is required, but real WPF binding,
+            // Selector coercion and dispatcher behavior must run on Windows / STA.
+            var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            app.DispatcherUnhandledException += (s, e) =>
             {
-                s.Refresh(Devices(kind)); Pump(); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
-                s.Refresh(Devices(kind).Reverse()); Pump(); Equal("second", read()); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
-            }));
-            Test($"device kind {kind}: unplug preserves ID and inserts unavailable option", () => WithSelector(kind, "second", (s, box, read, _) =>
+                Console.WriteLine("DISPATCHER UNHANDLED EXCEPTION: " + e.Exception);
+                e.Handled = true;
+                failed++;
+            };
+            foreach (int kind in new[] { 0, 1, 2 })
             {
-                s.Refresh(Devices(kind)); Pump();
-                s.Refresh([]); Pump(); Equal("second", read()); Equal("second", box.SelectedValue);
-                True(((DeviceOption)box.SelectedItem).Name.Contains("Недоступно"));
-                s.Refresh(Devices(kind)); Pump(); Equal("second", read()); Equal("second", box.SelectedValue);
-                Equal("Second", ((DeviceOption)box.SelectedItem).Name);
-            }));
-            Test($"device kind {kind}: transient null cannot erase a saved ID", () => WithSelector(kind, "second", (s, box, read, _) =>
-            {
-                s.Refresh(Devices(kind)); Pump();
-                box.SetCurrentValue(ComboBox.SelectedValueProperty, null);
-                box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump();
-                Equal("second", read());
-                s.Refresh(Devices(kind)); Pump(); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
-            }));
-            Test($"device kind {kind}: selecting default is a real editable empty ID", () => WithSelector(kind, "second", (s, box, read, _) =>
-            {
-                s.Refresh(Devices(kind)); Pump();
-                box.SetCurrentValue(ComboBox.SelectedValueProperty, "");
-                box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump(); Equal("", read());
-                box.SetCurrentValue(ComboBox.SelectedValueProperty, "first");
-                box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump(); Equal("first", read());
-            }));
-            Test($"device kind {kind}: cloned/replaced settings update the visible selection", () => WithSelector(kind, "second", (s, box, read, replace) =>
-            {
-                s.Refresh(Devices(kind)); Pump(); replace("first"); s.Refresh(Devices(kind)); Pump();
-                Equal("first", read()); Equal("first", box.SelectedValue); Equal("first", SelectedId(box));
-            }));
+                Test($"device kind {kind}: default survives repeated refresh", () => WithSelector(kind, "", (s, box, read, _) =>
+                {
+                    for (int i = 0; i < 5; i++) { s.Refresh(Devices(kind)); Pump(); Equal("", read()); Equal("", box.SelectedValue); Equal("", SelectedId(box)); }
+                }));
+                Test($"device kind {kind}: explicit ID survives reordered/replaced items", () => WithSelector(kind, "second", (s, box, read, _) =>
+                {
+                    s.Refresh(Devices(kind)); Pump(); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
+                    s.Refresh(Devices(kind).Reverse()); Pump(); Equal("second", read()); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
+                }));
+                Test($"device kind {kind}: unplug preserves ID and inserts unavailable option", () => WithSelector(kind, "second", (s, box, read, _) =>
+                {
+                    s.Refresh(Devices(kind)); Pump();
+                    s.Refresh([]); Pump(); Equal("second", read()); Equal("second", box.SelectedValue);
+                    True(((DeviceOption)box.SelectedItem).Name.Contains("Недоступно"));
+                    s.Refresh(Devices(kind)); Pump(); Equal("second", read()); Equal("second", box.SelectedValue);
+                    Equal("Second", ((DeviceOption)box.SelectedItem).Name);
+                }));
+                Test($"device kind {kind}: transient null cannot erase a saved ID", () => WithSelector(kind, "second", (s, box, read, _) =>
+                {
+                    s.Refresh(Devices(kind)); Pump();
+                    box.SetCurrentValue(ComboBox.SelectedValueProperty, null);
+                    box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump();
+                    Equal("second", read());
+                    s.Refresh(Devices(kind)); Pump(); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
+                }));
+                Test($"device kind {kind}: selecting default is a real editable empty ID", () => WithSelector(kind, "second", (s, box, read, _) =>
+                {
+                    s.Refresh(Devices(kind)); Pump();
+                    box.SetCurrentValue(ComboBox.SelectedValueProperty, "");
+                    box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump(); Equal("", read());
+                    box.SetCurrentValue(ComboBox.SelectedValueProperty, "first");
+                    box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump(); Equal("first", read());
+                }));
+                Test($"device kind {kind}: cloned/replaced settings update the visible selection", () => WithSelector(kind, "second", (s, box, read, replace) =>
+                {
+                    s.Refresh(Devices(kind)); Pump(); replace("first"); s.Refresh(Devices(kind)); Pump();
+                    Equal("first", read()); Equal("first", box.SelectedValue); Equal("first", SelectedId(box));
+                }));
+            }
+            ComboBoxPresentationTests();
+            GalleryViewTrimmingTests.RunAllTests();
+            RangeSliderStressTests.RunAllTests();
+            Application.Current.Shutdown();
+            Console.WriteLine($"\n{passed} WPF regressions passed; {failed} failed.");
+            return failed == 0 ? 0 : 1;
         }
-        ComboBoxPresentationTests();
-        GalleryViewTrimmingTests.RunAllTests();
-        RangeSliderStressTests.RunAllTests();
-        Application.Current.Shutdown();
-        Console.WriteLine($"\n{passed} WPF regressions passed; {failed} failed.");
-        return failed == 0 ? 0 : 1;
+        catch (Exception ex)
+        {
+            Console.WriteLine("CRITICAL EXCEPTION IN WindowsTests: " + ex);
+            return 1;
+        }
     }
 
     // Production ComboBox templates: the theme is parsed from src/HuntReplay.App/Themes/Dark.xaml itself.

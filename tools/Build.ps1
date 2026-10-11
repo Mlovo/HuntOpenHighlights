@@ -33,6 +33,7 @@ if ($Signature.Status -ne 'Valid' -or $Signature.SignerCertificate.Subject -notm
 }
 if (!$SkipTests) {
     Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.Tests','--configuration',$Configuration)
+    Invoke-Checked 'dotnet' @('build','src/HuntReplay.App','--configuration',$Configuration)
     Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.WindowsTests','--configuration',$Configuration)
 }
 & (Join-Path $PSScriptRoot 'PrepareFFmpeg.ps1') -ArchivePath $FFmpegArchive -Offline:$Offline

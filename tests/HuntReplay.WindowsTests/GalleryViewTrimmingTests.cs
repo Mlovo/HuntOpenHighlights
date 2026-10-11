@@ -306,16 +306,13 @@ public static class GalleryViewTrimmingTests
                 Program.Pump();
 
                 // Progress update simulation
-                var syncEvent = new ManualResetEventSlim(false);
-                var progress = new Progress<double>(p => host.Dispatcher.Invoke(() =>
+                void UpdateProgress(double p)
                 {
                     progressBar.Value = p * 100;
                     statusText.Text = $"{(int)(p * 100)}%";
-                    syncEvent.Set();
-                }));
+                }
 
-                ((IProgress<double>)progress).Report(0.65);
-                syncEvent.Wait(1000);
+                UpdateProgress(0.65);
                 Program.Pump();
 
                 Program.Equal(65.0, progressBar.Value);
@@ -381,6 +378,26 @@ public static class GalleryViewTrimmingTests
                 if (Directory.Exists(appBin))
                 {
                     assemblyPath = Directory.GetFiles(appBin, "HuntReplayStudio.dll", SearchOption.AllDirectories).FirstOrDefault();
+                }
+            }
+
+            if (assemblyPath == null && root != null)
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("dotnet", $"build \"{Path.Combine(root, "src", "HuntReplay.App")}\" -c Release")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                var proc = System.Diagnostics.Process.Start(psi);
+                proc?.WaitForExit();
+                assemblyPath = candidatePaths.FirstOrDefault(File.Exists);
+                if (assemblyPath == null)
+                {
+                    var appBin = Path.Combine(root, "src", "HuntReplay.App", "bin");
+                    if (Directory.Exists(appBin))
+                    {
+                        assemblyPath = Directory.GetFiles(appBin, "HuntReplayStudio.dll", SearchOption.AllDirectories).FirstOrDefault();
+                    }
                 }
             }
 

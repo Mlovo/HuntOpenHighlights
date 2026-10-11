@@ -53,8 +53,32 @@ public static class RangeSliderStressTests
         string? found = candidates.FirstOrDefault(File.Exists);
         if (found == null)
         {
-            var files = Directory.GetFiles(Path.Combine(root, "src", "HuntReplay.App", "bin"), "HuntReplayStudio.dll", SearchOption.AllDirectories);
-            found = files.FirstOrDefault();
+            var appBin = Path.Combine(root, "src", "HuntReplay.App", "bin");
+            if (Directory.Exists(appBin))
+            {
+                var files = Directory.GetFiles(appBin, "HuntReplayStudio.dll", SearchOption.AllDirectories);
+                found = files.FirstOrDefault();
+            }
+        }
+
+        if (found == null)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("dotnet", $"build \"{Path.Combine(root, "src", "HuntReplay.App")}\" -c Release")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            var proc = System.Diagnostics.Process.Start(psi);
+            proc?.WaitForExit();
+            found = candidates.FirstOrDefault(File.Exists);
+            if (found == null)
+            {
+                var appBin = Path.Combine(root, "src", "HuntReplay.App", "bin");
+                if (Directory.Exists(appBin))
+                {
+                    found = Directory.GetFiles(appBin, "HuntReplayStudio.dll", SearchOption.AllDirectories).FirstOrDefault();
+                }
+            }
         }
 
         if (found == null) throw new FileNotFoundException("HuntReplayStudio.dll could not be located in any bin output directory.");
