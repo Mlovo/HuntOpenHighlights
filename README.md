@@ -27,9 +27,7 @@ It automatically captures highlights (kills, deaths, downs) directly from the ga
 1. Download the latest `HuntReplayStudio.exe` from [Releases](https://github.com/Mlovo/HuntOpenHighlights/releases).
 2. Run `HuntReplayStudio.exe`.
 3. Complete the quick initial setup wizard (confirms NVIDIA MessageBus registration).
-4. In **Hunt: Showdown 1896**:
-   - Go to **Settings** ➔ **Game** ➔ ensure **NVIDIA Highlights** is **Enabled**.
-5. Play! Clips will be saved automatically upon kills and downs into your configured library directory.
+4. Play! Clips will be saved automatically upon kills and downs into your configured library directory.
 
 > **Note for NVIDIA Users:**  
 > If you have GeForce Experience or NVIDIA App installed, disable auto-highlights in their overlay settings (*Settings ➔ Highlights ➔ Off*) so they don't conflict with HuntReplay Studio.
@@ -65,9 +63,7 @@ The output portable executable will be placed in `artifacts\publish\HuntReplaySt
 1. Скачайте свежий `HuntReplayStudio.exe` из раздела [Releases](https://github.com/Mlovo/HuntOpenHighlights/releases).
 2. Запустите `HuntReplayStudio.exe`.
 3. Пройдите мастер первоначальной настройки (подтвердит регистрацию MessageBus).
-4. В самой игре **Hunt: Showdown 1896**:
-   - Перейдите в **Настройки** ➔ **Игра** ➔ пункт **«NVIDIA Highlights»** должен быть **Включён**.
-5. Играйте! Клипы будут сохраняться автоматически в настроенную папку библиотеки.
+4. Играйте! Клипы будут сохраняться автоматически в настроенную папку библиотеки.
 
 > **Примечание для владельцев видеокарт NVIDIA:**  
 > Если у вас установлен GeForce Experience или NVIDIA App, отключите автоматическую запись хайлайтов в оверлее (*Настройки ➔ Highlights ➔ Выключить*), чтобы они не спорили за события игры.
