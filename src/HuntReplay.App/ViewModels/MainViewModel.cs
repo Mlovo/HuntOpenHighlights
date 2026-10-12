@@ -392,19 +392,26 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
                             nextRetry = Environment.TickCount64 + 5000;
                         }
 
-                        // When capturing game window directly, stop if the window disappeared.
+                        // When capturing game window directly, stop if the window disappeared or changed.
                         // When capturing monitor, keep running as long as the game process is running!
-                        if (recorder.Settings.System.AutoBufferWithGame && !manuallyStarted)
+                        if (recorder.Settings.Video.Source == CaptureSource.HuntWindow)
                         {
-                            if (recorder.Settings.Video.Source == CaptureSource.HuntWindow)
+                            if (previous != IntPtr.Zero && window == IntPtr.Zero && recorder.Status.Running)
                             {
-                                if (previous != IntPtr.Zero && window == IntPtr.Zero)
+                                if (recorder.Settings.System.AutoBufferWithGame && !manuallyStarted)
                                 {
                                     await recorder.StopAsync();
                                     manuallyStarted = false;
                                 }
                             }
-                            else if (recorder.Settings.Video.Source == CaptureSource.Monitor)
+                            else if (previous != IntPtr.Zero && window != IntPtr.Zero && previous != window && recorder.Status.Running)
+                            {
+                                await recorder.StopAsync();
+                            }
+                        }
+                        else if (recorder.Settings.Video.Source == CaptureSource.Monitor)
+                        {
+                            if (recorder.Settings.System.AutoBufferWithGame && !manuallyStarted)
                             {
                                 if (!gameRunning && recorder.Status.Running)
                                 {
@@ -423,7 +430,9 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
                             finally { Busy = false; }
                         }
                         if (retryCount >= 3 && wanted && !recorder.Status.Running)
-                            Message = "Автоповтор остановлен после трёх ошибок. Проверьте диагностику и нажмите «Запустить буфер».";
+                            Message = Loc.IsEnglish
+                                ? "Auto-retry stopped after 3 errors. Check diagnostics and click 'Start Buffer'."
+                                : "Автоповтор остановлен после трёх ошибок. Проверьте диагностику и нажмите «Запустить буфер».";
                         RefreshStatus();
                     }
                     catch (Exception ex) { Error(ex); }
@@ -458,7 +467,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task ApplyAsync()
     {
         if (Application.Current.MainWindow is { } root && HasFormErrors(root, new HashSet<DependencyObject>()))
-            throw new InvalidDataException("Исправьте поля с некорректными числами перед сохранением настроек.");
+            throw new InvalidDataException(Loc.IsEnglish ? "Please correct invalid numeric fields before saving settings." : "Исправьте поля с некорректными числами перед сохранением настроек.");
         var updated = SettingsEdit.Clone(); updated.Validate();
         await operation.WaitAsync(); Busy = true;
         var old = recorder.Settings.Clone();

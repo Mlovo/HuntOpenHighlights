@@ -268,7 +268,7 @@ public partial class GalleryView : UserControl
         catch (Exception ex)
         {
             PlayerHint.Visibility = Visibility.Visible;
-            PlayerHintText.Text = "Ошибка плеера: " + ex.Message;
+            PlayerHintText.Text = (LocalizationService.Instance.IsEnglish ? "Player error: " : "Ошибка плеера: ") + ex.Message;
         }
     }
 
@@ -1043,7 +1043,7 @@ public partial class GalleryView : UserControl
 
             if (!File.Exists(exportedFile))
             {
-                throw new IOException("Файл фрагмента отсутствует на диске после сохранения.");
+                throw new IOException(GetLoc("Файл фрагмента отсутствует на диске после сохранения.", "Fragment file is missing on disk after saving."));
             }
 
             await HandleExportSuccess(exportedFile, start, end);
@@ -1237,6 +1237,10 @@ public partial class GalleryView : UserControl
         if (JumpEndButton is not null) JumpEndButton.ToolTip = en ? "Jump player to end [End]" : "Перейти к концу фрагмента [End]";
         if (MarkOutText is not null) MarkOutText.Text = en ? "Set End" : "Задать конец";
         if (MarkOutButton is not null) MarkOutButton.ToolTip = en ? "Set end to current frame [O]" : "Установить конец по текущему кадру [O]";
+        if (PlayerHintText is not null && (playerHandle == IntPtr.Zero || PlayerHint.Visibility == Visibility.Visible))
+        {
+            PlayerHintText.Text = LocalizationService.Instance["Gallery.SelectClipHint"];
+        }
     }
 
     #endregion
