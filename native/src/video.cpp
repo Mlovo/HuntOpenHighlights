@@ -1,10 +1,38 @@
 #include "common.h"
 
 namespace hr {
-D3D::D3D(HMONITOR monitor) {
+D3D::D3D(HMONITOR monitor, const wchar_t* gpu_device) {
     ComPtr<IDXGIFactory1> factory;
     check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
     ComPtr<IDXGIAdapter1> fallback;
+    ComPtr<IDXGIAdapter1> monitor_adapter;
+    ComPtr<IDXGIAdapter1> explicit_adapter;
+
+    std::wstring requested_str;
+    if (gpu_device) {
+        const wchar_t* p = gpu_device;
+        while (*p && iswspace(*p)) p++;
+        const wchar_t* end_p = p + wcslen(p);
+        while (end_p > p && iswspace(*(end_p - 1))) end_p--;
+        requested_str.assign(p, end_p - p);
+    }
+
+    int requested_index = -1;
+    bool has_requested_index = false;
+    if (!requested_str.empty()) {
+        wchar_t* end = nullptr;
+        long val = wcstol(requested_str.c_str(), &end, 10);
+        if (end != requested_str.c_str() && *end == L'\0') {
+            has_requested_index = true;
+            if (val >= 0) {
+                requested_index = static_cast<int>(val);
+            }
+        }
+    }
+
+    ComPtr<IDXGIAdapter1> exact_adapter;
+    ComPtr<IDXGIAdapter1> substring_adapter;
+
     for (UINT i = 0; ; ++i) {
         ComPtr<IDXGIAdapter1> candidate;
         HRESULT enumerated = factory->EnumAdapters1(i, &candidate);
@@ -14,26 +42,87 @@ D3D::D3D(HMONITOR monitor) {
         check(candidate->GetDesc1(&desc));
         if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
         if (!fallback) fallback = candidate;
+
+        if (!requested_str.empty()) {
+            if (has_requested_index) {
+                if (static_cast<int>(i) == requested_index) {
+                    explicit_adapter = candidate;
+                }
+            } else {
+                if (_wcsicmp(desc.Description, requested_str.c_str()) == 0) {
+                    exact_adapter = candidate;
+                } else if (!substring_adapter) {
+                    std::wstring desc_lower(desc.Description);
+                    std::wstring req_lower(requested_str);
+                    for (auto& c : desc_lower) c = towlower(c);
+                    for (auto& c : req_lower) c = towlower(c);
+                    if (desc_lower.find(req_lower) != std::wstring::npos) {
+                        substring_adapter = candidate;
+                    }
+                }
+            }
+        }
+
         for (UINT j = 0; ; ++j) {
             ComPtr<IDXGIOutput> output;
             HRESULT enumerated_output = candidate->EnumOutputs(j, &output);
-            if (enumerated_output == DXGI_ERROR_NOT_FOUND) break;
-            check(enumerated_output);
-            DXGI_OUTPUT_DESC info{}; check(output->GetDesc(&info));
-            if (info.Monitor == monitor) adapter = candidate;
+            if (enumerated_output == DXGI_ERROR_NOT_FOUND || FAILED(enumerated_output)) break;
+            DXGI_OUTPUT_DESC info{};
+            if (SUCCEEDED(output->GetDesc(&info))) {
+                if (info.Monitor == monitor) monitor_adapter = candidate;
+            }
         }
     }
-    if (!adapter) adapter = fallback;
-    if (!adapter) throw std::runtime_error("No hardware DXGI adapter available (RDP/headless is not supported).");
+
+    if (!has_requested_index) {
+        if (exact_adapter) {
+            explicit_adapter = exact_adapter;
+        } else if (substring_adapter) {
+            explicit_adapter = substring_adapter;
+        }
+    }
+
+    ComPtr<IDXGIAdapter1> default_adapter = monitor_adapter ? monitor_adapter : fallback;
+    if (!default_adapter) throw std::runtime_error("No hardware DXGI adapter available (RDP/headless is not supported).");
+
+    D3D_FEATURE_LEVEL levels[]{D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+
+    auto try_init = [&](IDXGIAdapter1* target_adapter) -> bool {
+        if (!target_adapter) return false;
+        ComPtr<ID3D11Device> dev;
+        ComPtr<ID3D11DeviceContext> ctx;
+        HRESULT hr = D3D11CreateDevice(target_adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+            flags, levels, ARRAYSIZE(levels), D3D11_SDK_VERSION, &dev, nullptr, &ctx);
+        if (FAILED(hr)) return false;
+        ComPtr<ID3D10Multithread> mt;
+        if (FAILED(ctx.As(&mt))) return false;
+        ComPtr<ID3D11VideoDevice> vd;
+        if (FAILED(dev.As(&vd))) return false;
+        ComPtr<ID3D11VideoContext> vc;
+        if (FAILED(ctx.As(&vc))) return false;
+        mt->SetMultithreadProtected(TRUE);
+        device = dev;
+        context = ctx;
+        video_device = vd;
+        video_context = vc;
+        adapter = target_adapter;
+        return true;
+    };
+
+    requested_fallback = !requested_str.empty();
+    if (explicit_adapter && try_init(explicit_adapter.Get())) {
+        requested_fallback = false;
+    } else if (try_init(default_adapter.Get())) {
+        // Default adapter initialized.
+    } else if (fallback && fallback.Get() != default_adapter.Get() && try_init(fallback.Get())) {
+        // Generic fallback adapter initialized.
+    } else {
+        throw std::runtime_error("No hardware DXGI adapter could initialize Direct3D 11 video context.");
+    }
+
     DXGI_ADAPTER_DESC1 desc{}; check(adapter->GetDesc1(&desc));
     vendor = desc.VendorId; name = desc.Description;
-    D3D_FEATURE_LEVEL levels[]{D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
-    check(D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
-        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
-        levels, ARRAYSIZE(levels), D3D11_SDK_VERSION, &device, nullptr, &context));
-    ComPtr<ID3D10Multithread> multithread;
-    check(context.As(&multithread)); multithread->SetMultithreadProtected(TRUE);
-    check(device.As(&video_device)); check(context.As(&video_context));
 }
 
 VideoEncoder::VideoEncoder(D3D& device, hr_config config, Emit callback) : d3d(device), emit(std::move(callback)) {

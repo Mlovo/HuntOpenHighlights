@@ -100,7 +100,8 @@ struct D3D {
     ComPtr<IDXGIAdapter1> adapter;
     uint32_t vendor = 0;
     std::wstring name;
-    explicit D3D(HMONITOR monitor);
+    bool requested_fallback = false;
+    explicit D3D(HMONITOR monitor, const wchar_t* gpu_device = nullptr);
 };
 
 class VideoEncoder {
@@ -138,7 +139,7 @@ public:
 
 struct Session {
     hr_config config;
-    std::wstring output_id, microphone_id, description;
+    std::wstring output_id, microphone_id, gpu_id, description;
     hr_packet_callback packets;
     hr_log_callback logs;
     void* user;

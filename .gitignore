@@ -25,3 +25,10 @@ native/out/
 *.user
 *.suo
 *.partial.mp4
+
+# Antigravity agents & customizations
+.agents/
+.agent/
+
+# Local agent instructions
+CLAUDE.md

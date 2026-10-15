@@ -45,6 +45,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public DeviceSelectionViewModel MonitorSelection { get; }
     public DeviceSelectionViewModel OutputSelection { get; }
     public DeviceSelectionViewModel MicrophoneSelection { get; }
+    public DeviceSelectionViewModel GpuSelection { get; }
     public ObservableCollection<LogEntry> Events { get; } = [];
     public ObservableCollection<ClipViewModel> Clips { get; } = [];
     public ICollectionView FilteredClips { get; }
@@ -145,7 +146,12 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public double BufferFill => Math.Clamp(status.Buffer.Seconds / recorder.Settings.Replay.BufferSeconds * 100, 0, 100);
     public string MemoryText => $"{status.Buffer.Bytes / 1024d / 1024:F1} {Loc["Dash.RamSuffix"]}";
     public string GpuStatus => status.Running ? status.Encoder :
-        string.Format(Loc["Dash.GpuWaiting"], Devices.FirstOrDefault(d => d.Kind == 3)?.Name ?? Loc["Dash.GpuUnknown"]);
+        string.Format(Loc["Dash.GpuWaiting"],
+            (!string.IsNullOrEmpty(recorder.Settings.Video.GpuDevice)
+                ? Devices.FirstOrDefault(d => d.Kind == 3 && (d.Id == recorder.Settings.Video.GpuDevice || string.Equals(d.Name, recorder.Settings.Video.GpuDevice, StringComparison.OrdinalIgnoreCase)))?.Name
+                : null)
+            ?? Devices.FirstOrDefault(d => d.Kind == 3)?.Name
+            ?? Loc["Dash.GpuUnknown"]);
     public string EncodingModeLabel => recorder.Settings.Video.Encoder == VideoEncoder.X264 ? Loc["Dash.CpuExplicit"] : Loc["Dash.GpuEncoding"];
     public string VideoStatus => status.Running ? $"{status.Native.Width} × {status.Native.Height} · {recorder.Settings.Video.Fps} FPS · {recorder.Settings.Video.Codec}" :
         Loc["Dash.WgcD3D"];
@@ -274,6 +280,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             () => Loc["Choice.MicDefault"],
             () => Loc.IsEnglish ? "Unavailable · saved device is not connected" : "Недоступно · сохранённое устройство не подключено",
             () => SettingsEdit.Audio.MicrophoneDeviceId, value => SettingsEdit.Audio.MicrophoneDeviceId = value);
+        GpuSelection = new(3,
+            () => Loc["Choice.GpuDefault"],
+            () => Loc["Choice.GpuUnavailable"],
+            () => SettingsEdit.Video.GpuDevice, value => SettingsEdit.Video.GpuDevice = value);
         FilteredClips = CollectionViewSource.GetDefaultView(Clips);
         FilteredClips.Filter = value => value is ClipViewModel c &&
             (string.IsNullOrWhiteSpace(Search) || c.FileName.Contains(Search, StringComparison.OrdinalIgnoreCase) || c.EventLabel.Contains(Search, StringComparison.OrdinalIgnoreCase));
@@ -336,6 +346,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         MonitorSelection.Refresh(Devices);
         OutputSelection.Refresh(Devices);
         MicrophoneSelection.Refresh(Devices);
+        GpuSelection.Refresh(Devices);
     }
 
     private async Task ToggleAsync()

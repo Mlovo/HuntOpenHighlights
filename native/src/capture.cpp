@@ -18,7 +18,9 @@ Session::Session(const hr_config& source, hr_packet_callback packet_cb, hr_log_c
     validate(source);
     output_id = source.output_device ? source.output_device : L"";
     microphone_id = source.microphone_device ? source.microphone_device : L"";
+    gpu_id = source.gpu_device ? source.gpu_device : L"";
     config.output_device = output_id.c_str(); config.microphone_device = microphone_id.c_str();
+    config.gpu_device = gpu_id.c_str();
 }
 Session::~Session() { stop(); }
 void Session::log(int level, const std::string& message) const { if (logs) logs(user, level, message.c_str()); }
@@ -144,7 +146,7 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
             : reinterpret_cast<HMONITOR>(static_cast<uintptr_t>(config.monitor));
         if (!monitor) monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
         if (window && !IsWindow(window)) throw std::runtime_error("Game window is no longer available.");
-        d3d = std::make_unique<D3D>(monitor);
+        d3d = std::make_unique<D3D>(monitor, config.gpu_device);
         auto interop = winrt::get_activation_factory<Capture::GraphicsCaptureItem, IGraphicsCaptureItemInterop>();
         Capture::GraphicsCaptureItem item{nullptr};
         if (window) check(interop->CreateForWindow(window, winrt::guid_of<Capture::GraphicsCaptureItem>(), winrt::put_abi(item)));
@@ -155,6 +157,8 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
             config.width = (size.Width / 2) * 2; config.height = (size.Height / 2) * 2;
         }
         validate(config);
+        if (d3d->requested_fallback)
+            log(1, "Selected GPU \"" + utf8(gpu_id) + "\" is unavailable; using " + utf8(d3d->name) + ".");
         auto callback = [this](int stream, const AVPacket* packet, AVRational base) { emit(stream, packet, base); };
         log(0, "Initializing GPU capture: " + utf8(d3d->name) + " / " + std::to_string(config.width)
             + "x" + std::to_string(config.height) + " / " + std::to_string(config.fps) + " FPS.");

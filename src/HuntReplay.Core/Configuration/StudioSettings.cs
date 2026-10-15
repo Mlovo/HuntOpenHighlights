@@ -50,6 +50,7 @@ public sealed class StudioSettings
         Require(Video.Encoder != VideoEncoder.X264 || Video.Codec == VideoCodec.H264,
             "CPU x264 поддерживает только H.264. Программный fallback никогда не включается скрыто.");
         Require(Video.MonitorDevice is not null, "Не указан монитор.");
+        Require(Video.GpuDevice is not null, "Не указана видеокарта.");
         Require(Enum.IsDefined(Audio.Mode), "Неизвестный аудиорежим.");
         Require(Audio.MicrophoneVolume is >= 0 and <= 100, "Громкость микрофона: 0–100%.");
         Require(Audio.OutputDeviceId is not null && Audio.MicrophoneDeviceId is not null, "Не указаны аудиоустройства.");
@@ -80,6 +81,9 @@ public sealed class VideoSettings
     // Old UI versions could serialize null during ComboBox refresh. Recover as Windows default.
     [AllowNull]
     public string MonitorDevice { get => monitorDevice; set => monitorDevice = value ?? ""; }
+    private string gpuDevice = "";
+    [AllowNull]
+    public string GpuDevice { get => gpuDevice; set => gpuDevice = value ?? ""; }
     public VideoResolution Resolution { get; set; } = VideoResolution.Native;
     public int Fps { get; set; } = 60;
     public VideoEncoder Encoder { get; set; } = VideoEncoder.Auto;

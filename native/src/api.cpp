@@ -52,7 +52,7 @@ int HR_CALL hr_probe(const hr_config* source) {
         auto monitor = window ? MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST)
             : reinterpret_cast<HMONITOR>(static_cast<uintptr_t>(config.monitor));
         if (!monitor) monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
-        hr::D3D d3d(monitor);
+        hr::D3D d3d(monitor, config.gpu_device);
         if (!config.width || !config.height) {
             RECT area{};
             if (window) hr::check(GetClientRect(window, &area) ? S_OK : HRESULT_FROM_WIN32(GetLastError()));

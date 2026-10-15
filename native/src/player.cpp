@@ -8,8 +8,57 @@ struct AudioPlayback {
     ComPtr<IAudioRenderClient> render;
     WAVEFORMATEX* mix_format = nullptr;
     SwrContext* resampler = nullptr;
+    AVChannelLayout in_layout{};
+    AVSampleFormat in_fmt = AV_SAMPLE_FMT_NONE;
+    int in_rate = 0;
     UINT32 buffer_frames = 0;
     bool ready = false;
+
+    bool configure_resampler(const AVChannelLayout* src_layout, AVSampleFormat src_fmt, int src_rate) {
+        if (!src_layout || src_rate <= 0 || src_fmt < 0) return false;
+        if (src_layout->nb_channels <= 0 || !av_channel_layout_check(src_layout)) return false;
+        if (!mix_format || mix_format->nSamplesPerSec == 0 || mix_format->nChannels == 0) return false;
+
+        AVChannelLayout out_layout{};
+        if (mix_format->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+            auto* ext = reinterpret_cast<WAVEFORMATEXTENSIBLE*>(mix_format);
+            if (ext->dwChannelMask) av_channel_layout_from_mask(&out_layout, ext->dwChannelMask);
+            else av_channel_layout_default(&out_layout, mix_format->nChannels);
+        } else {
+            av_channel_layout_default(&out_layout, mix_format->nChannels);
+        }
+
+        if (!av_channel_layout_check(&out_layout) || out_layout.nb_channels <= 0) {
+            av_channel_layout_uninit(&out_layout);
+            av_channel_layout_default(&out_layout, mix_format->nChannels);
+        }
+
+        AVSampleFormat out_fmt = (mix_format->wBitsPerSample == 32) ? AV_SAMPLE_FMT_FLT : AV_SAMPLE_FMT_S16;
+
+        SwrContext* new_resampler = nullptr;
+        int res = swr_alloc_set_opts2(&new_resampler, &out_layout, out_fmt, mix_format->nSamplesPerSec,
+                                      src_layout, src_fmt, src_rate, 0, nullptr);
+        av_channel_layout_uninit(&out_layout);
+        if (res < 0 || !new_resampler) return false;
+        if (swr_init(new_resampler) < 0) {
+            swr_free(&new_resampler);
+            return false;
+        }
+
+        if (resampler) swr_free(&resampler);
+        resampler = new_resampler;
+
+        av_channel_layout_uninit(&in_layout);
+        if (av_channel_layout_copy(&in_layout, src_layout) < 0) {
+            swr_free(&resampler);
+            in_fmt = AV_SAMPLE_FMT_NONE;
+            in_rate = 0;
+            return false;
+        }
+        in_fmt = src_fmt;
+        in_rate = src_rate;
+        return true;
+    }
 
     explicit AudioPlayback(AVCodecContext* codec) {
         if (!codec) return;
@@ -23,22 +72,12 @@ struct AudioPlayback {
             if (FAILED(client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 5'000'000, 0, mix_format, nullptr))) return;
             if (FAILED(client->GetBufferSize(&buffer_frames))) return;
             if (FAILED(client->GetService(IID_PPV_ARGS(&render)))) return;
-
-            AVChannelLayout out_layout{};
-            if (mix_format->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-                auto* ext = reinterpret_cast<WAVEFORMATEXTENSIBLE*>(mix_format);
-                if (ext->dwChannelMask) av_channel_layout_from_mask(&out_layout, ext->dwChannelMask);
-                else av_channel_layout_default(&out_layout, mix_format->nChannels);
-            } else {
-                av_channel_layout_default(&out_layout, mix_format->nChannels);
-            }
-            AVSampleFormat out_fmt = (mix_format->wBitsPerSample == 32) ? AV_SAMPLE_FMT_FLT : AV_SAMPLE_FMT_S16;
-            int res = swr_alloc_set_opts2(&resampler, &out_layout, out_fmt, mix_format->nSamplesPerSec,
-                                          &codec->ch_layout, codec->sample_fmt, codec->sample_rate, 0, nullptr);
-            av_channel_layout_uninit(&out_layout);
-            if (res < 0 || !resampler) return;
-            if (swr_init(resampler) < 0) return;
             ready = true;
+
+            if (codec->sample_rate > 0 && codec->sample_fmt >= 0 &&
+                codec->ch_layout.nb_channels > 0 && av_channel_layout_check(&codec->ch_layout)) {
+                configure_resampler(&codec->ch_layout, codec->sample_fmt, codec->sample_rate);
+            }
         } catch (...) {
             ready = false;
         }
@@ -47,6 +86,7 @@ struct AudioPlayback {
     ~AudioPlayback() {
         if (client) client->Stop();
         if (resampler) swr_free(&resampler);
+        av_channel_layout_uninit(&in_layout);
         if (mix_format) CoTaskMemFree(mix_format);
     }
 
@@ -56,8 +96,29 @@ struct AudioPlayback {
         volume.store(std::clamp(v, 0.0f, 1.0f));
     }
 
+    void reset() {
+        if (client) client->Reset();
+        if (resampler && swr_is_initialized(resampler)) {
+            swr_close(resampler);
+            swr_init(resampler);
+        }
+    }
+
     void write(AVFrame* frame) {
-        if (!ready || !render || !resampler) return;
+        if (!ready || !render || !frame) return;
+        if (frame->nb_samples <= 0 || frame->sample_rate <= 0 || frame->format < 0) return;
+        if (!frame->extended_data || !frame->extended_data[0]) return;
+        if (frame->ch_layout.nb_channels <= 0 || !av_channel_layout_check(&frame->ch_layout)) return;
+
+        if (!resampler ||
+            av_channel_layout_compare(&in_layout, &frame->ch_layout) != 0 ||
+            in_fmt != static_cast<AVSampleFormat>(frame->format) ||
+            in_rate != frame->sample_rate) {
+            if (!configure_resampler(&frame->ch_layout, static_cast<AVSampleFormat>(frame->format), frame->sample_rate)) {
+                return;
+            }
+        }
+
         int out_samples = static_cast<int>(av_rescale_rnd(swr_get_delay(resampler, frame->sample_rate) + frame->nb_samples,
                                                           mix_format->nSamplesPerSec, frame->sample_rate, AV_ROUND_UP));
         if (out_samples <= 0) return;
@@ -71,7 +132,7 @@ struct AudioPlayback {
         BYTE* dest = nullptr;
         if (FAILED(render->GetBuffer(to_write, &dest))) return;
         uint8_t* out_ptrs[1]{dest};
-        const uint8_t** in_ptrs = const_cast<const uint8_t**>(frame->data);
+        const uint8_t** in_ptrs = const_cast<const uint8_t**>(frame->extended_data);
         int converted = swr_convert(resampler, out_ptrs, to_write, in_ptrs, frame->nb_samples);
         if (converted > 0) {
             float vol = volume.load();
@@ -177,7 +238,7 @@ struct PlayerImpl {
         avcodec_flush_buffers(video_codec.get());
         if (audio_codec) {
             avcodec_flush_buffers(audio_codec.get());
-            if (audio_playback && audio_playback->client) audio_playback->client->Reset();
+            if (audio_playback) audio_playback->reset();
         }
 
         auto packet = make_packet();

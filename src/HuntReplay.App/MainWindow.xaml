@@ -24,7 +24,7 @@
           </Border>
           <Button Content="{Binding Loc[Nav.OpenFolder]}" Style="{DynamicResource QuietButton}" Command="{Binding OpenFolderCommand}" HorizontalContentAlignment="Left"/>
           <Border Height="1" Background="{DynamicResource Border}" Margin="12,16"/>
-          <Grid Margin="12,0"><TextBlock Text="STUDIO  /  0.1.7" FontSize="9" Foreground="{DynamicResource Muted}"/><TextBlock Text="LOCAL" FontSize="9" Foreground="{DynamicResource Accent}" HorizontalAlignment="Right"/></Grid>
+          <Grid Margin="12,0"><TextBlock Text="STUDIO  /  0.1.8" FontSize="9" Foreground="{DynamicResource Muted}"/><TextBlock Text="LOCAL" FontSize="9" Foreground="{DynamicResource Accent}" HorizontalAlignment="Right"/></Grid>
         </StackPanel>
       </DockPanel>
     </Border>

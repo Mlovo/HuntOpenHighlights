@@ -49,6 +49,12 @@ void enumerate(hr_device_callback callback, void* user) {
     if (!EnumDisplayMonitors(nullptr, nullptr, monitor_callback, reinterpret_cast<LPARAM>(&context)))
         check(HRESULT_FROM_WIN32(GetLastError()));
     ComPtr<IDXGIFactory1> factory; check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
+    struct AdapterEntry {
+        UINT index;
+        DXGI_ADAPTER_DESC1 desc;
+        UINT output_count;
+    };
+    std::vector<AdapterEntry> adapters;
     for (UINT i = 0; ; ++i) {
         ComPtr<IDXGIAdapter1> adapter;
         HRESULT enumerated = factory->EnumAdapters1(i, &adapter);
@@ -56,8 +62,47 @@ void enumerate(hr_device_callback callback, void* user) {
         check(enumerated);
         DXGI_ADAPTER_DESC1 desc{}; check(adapter->GetDesc1(&desc));
         if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
-        auto id = std::to_wstring(i);
-        hr_device item{3, i == 0, static_cast<int32_t>(desc.VendorId), 0, id.c_str(), desc.Description};
+        UINT outputs = 0;
+        for (UINT j = 0; ; ++j) {
+            ComPtr<IDXGIOutput> output;
+            if (adapter->EnumOutputs(j, &output) == DXGI_ERROR_NOT_FOUND) break;
+            ++outputs;
+        }
+        adapters.push_back({i, desc, outputs});
+    }
+    std::vector<AdapterEntry> filtered;
+    for (const auto& a : adapters) {
+        bool is_headless_duplicate = false;
+        for (const auto& other : adapters) {
+            if (other.index != a.index &&
+                other.desc.AdapterLuid.LowPart == a.desc.AdapterLuid.LowPart &&
+                other.desc.AdapterLuid.HighPart == a.desc.AdapterLuid.HighPart &&
+                other.output_count > 0 && a.output_count == 0) {
+                is_headless_duplicate = true;
+                break;
+            }
+        }
+        if (!is_headless_duplicate) filtered.push_back(a);
+    }
+    bool first_hardware = true;
+    for (size_t k = 0; k < filtered.size(); ++k) {
+        const auto& a = filtered[k];
+        size_t same_name_count = 0;
+        size_t rank = 0;
+        for (size_t m = 0; m < filtered.size(); ++m) {
+            if (wcscmp(filtered[m].desc.Description, a.desc.Description) == 0) {
+                ++same_name_count;
+                if (m <= k) ++rank;
+            }
+        }
+        std::wstring label = a.desc.Description;
+        if (same_name_count > 1) {
+            label += L" · #" + std::to_wstring(rank);
+        }
+        // Adapter order shifts with display topology; persist the name unless it is ambiguous.
+        auto id = same_name_count > 1 ? std::to_wstring(a.index) : std::wstring(a.desc.Description);
+        hr_device item{3, first_hardware ? 1 : 0, static_cast<int32_t>(a.desc.VendorId), 0, id.c_str(), label.c_str()};
+        first_hardware = false;
         callback(user, &item);
     }
     ComPtr<IMMDeviceEnumerator> enumerator;

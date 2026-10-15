@@ -14,6 +14,7 @@ public static partial class Program
         {
             var json = JsonSerializer.SerializeToNode(Settings(), StudioSettings.JsonOptions)!;
             json["Video"]!["MonitorDevice"] = null;
+            json["Video"]!["GpuDevice"] = null;
             json["Video"]!["Fps"] = 120;
             json["Audio"]!["OutputDeviceId"] = null;
             json["Audio"]!["MicrophoneDeviceId"] = null;
@@ -24,6 +25,7 @@ public static partial class Program
             True(store.LoadWarning is null);
             settings.Validate();
             Equal("", settings.Video.MonitorDevice);
+            Equal("", settings.Video.GpuDevice);
             Equal("", settings.Audio.OutputDeviceId);
             Equal("", settings.Audio.MicrophoneDeviceId);
             Equal(120, settings.Video.Fps);
@@ -31,6 +33,7 @@ public static partial class Program
             store.Save(settings);
             var saved = JsonNode.Parse(File.ReadAllText(store.FilePath))!;
             Equal("", saved["Video"]!["MonitorDevice"]!.GetValue<string>());
+            Equal("", saved["Video"]!["GpuDevice"]!.GetValue<string>());
             Equal("", saved["Audio"]!["OutputDeviceId"]!.GetValue<string>());
             Equal("", saved["Audio"]!["MicrophoneDeviceId"]!.GetValue<string>());
         }));
@@ -38,10 +41,12 @@ public static partial class Program
         {
             var s = Settings();
             s.Video.MonitorDevice = @"\\.\DISPLAY9";
+            s.Video.GpuDevice = "1";
             s.Audio.OutputDeviceId = "unplugged-output-endpoint";
             s.Audio.MicrophoneDeviceId = "unplugged-microphone-endpoint";
             s.Validate(); var copy = s.Clone();
             Equal(s.Video.MonitorDevice, copy.Video.MonitorDevice);
+            Equal(s.Video.GpuDevice, copy.Video.GpuDevice);
             Equal(s.Audio.OutputDeviceId, copy.Audio.OutputDeviceId);
             Equal(s.Audio.MicrophoneDeviceId, copy.Audio.MicrophoneDeviceId);
         });
@@ -49,13 +54,13 @@ public static partial class Program
         {
             var video = JsonSerializer.Deserialize<VideoSettings>("{}")!;
             var audio = JsonSerializer.Deserialize<AudioSettings>("{}")!;
-            Equal("", video.MonitorDevice); Equal("", audio.OutputDeviceId); Equal("", audio.MicrophoneDeviceId);
+            Equal("", video.MonitorDevice); Equal("", video.GpuDevice); Equal("", audio.OutputDeviceId); Equal("", audio.MicrophoneDeviceId);
         });
         Test("direct null device assignments normalize only the affected field", () =>
         {
             var s = Settings(); s.Audio.OutputDeviceId = "keep-output";
-            s.Video.MonitorDevice = null; s.Audio.MicrophoneDeviceId = null;
-            Equal("", s.Video.MonitorDevice); Equal("", s.Audio.MicrophoneDeviceId);
+            s.Video.MonitorDevice = null; s.Video.GpuDevice = null; s.Audio.MicrophoneDeviceId = null;
+            Equal("", s.Video.MonitorDevice); Equal("", s.Video.GpuDevice); Equal("", s.Audio.MicrophoneDeviceId);
             Equal("keep-output", s.Audio.OutputDeviceId); s.Validate();
         });
 

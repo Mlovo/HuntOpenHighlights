@@ -167,6 +167,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
             "Video.SourceHint" => en ? "In window mode, desktop is not captured when game is inactive. Monitor explicitly captures the entire display." : "В режиме окна рабочий стол не захватывается при отсутствии игры. Монитор — явное разрешение записывать весь экран.",
             "Video.Resolution" => en ? "Resolution" : "Разрешение",
             "Video.Fps" => en ? "Frame rate / FPS" : "Частота кадров / FPS",
+            "Video.Gpu" => en ? "Graphics Adapter (GPU)" : "Видеокарта (GPU)",
+            "Video.GpuHint" => en ? "Auto selects the GPU connected to the display. If the selected card is unavailable, the default adapter is used." : "Авто выбирает видеокарту, к которой подключён монитор. При недоступности выбранной карты используется адаптер по умолчанию.",
             "Video.Encoder" => en ? "Video Encoder" : "Видеокодировщик",
             "Video.Codec" => en ? "Codec" : "Кодек",
             "Video.EncoderHint" => en ? "Auto picks AMF / NVENC / QSV by the display's GPU. Validated at startup; no silent CPU fallback." : "Auto выбирает AMF / NVENC / QSV по GPU захватываемого дисплея. Возможность кодирования проверяется при старте; автоматического перехода на CPU нет.",
@@ -265,8 +267,10 @@ public sealed class LocalizationService : INotifyPropertyChanged
             "Choice.MonitorDefault" => en ? "Primary monitor · automatic" : "Основной монитор · автоматически",
             "Choice.OutputDefault" => en ? "Windows default audio output" : "Устройство вывода Windows по умолчанию",
             "Choice.MicDefault" => en ? "Windows default microphone" : "Микрофон Windows по умолчанию",
+            "Choice.GpuDefault" => en ? "Auto" : "Авто",
             "Choice.MonitorUnavailable" => en ? "Unavailable · saved monitor disconnected" : "Недоступно · сохранённый монитор не подключён",
             "Choice.AudioUnavailable" => en ? "Unavailable · saved device disconnected" : "Недоступно · сохранённое устройство не подключено",
+            "Choice.GpuUnavailable" => en ? "Unavailable · saved GPU is not available" : "Недоступно · сохранённая видеокарта недоступна",
 
             _ => key
         };

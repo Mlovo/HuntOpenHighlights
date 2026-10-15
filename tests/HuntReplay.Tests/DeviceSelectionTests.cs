@@ -60,5 +60,129 @@ public static partial class Program
             Equal("", selector.Options[0].Id);
             Equal("Микрофон Windows по умолчанию", selector.Options[0].Name);
         });
+        Test("default gpu stays an empty stored ID with Auto option and is never reported unavailable", () =>
+        {
+            string saved = "";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh([]);
+            Equal(1, selector.Options.Count);
+            Equal("", selector.Options[0].Id);
+            Equal("Авто", selector.Options[0].Name);
+        });
+        Test("unavailable gpu keeps the saved ID and shows unavailable without crashing", () =>
+        {
+            string saved = "1";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh([new DeviceOption(3, "0", "NVIDIA GeForce RTX 3080", IsDefault: true, Vendor: 0x10de)]);
+            var missing = selector.Options.Single(d => d.Id == "1");
+            True(missing.Name.Contains("Недоступно"));
+            Equal("1", saved);
+            selector.Refresh([
+                new DeviceOption(3, "0", "NVIDIA GeForce RTX 3080", IsDefault: true, Vendor: 0x10de),
+                new DeviceOption(3, "1", "Intel(R) UHD Graphics 770", Vendor: 0x8086)
+            ]);
+            Equal("Intel(R) UHD Graphics 770", selector.Options.Single(d => d.Id == "1").Name);
+            Equal("1", saved);
+        });
+        Test("gpu selector enumerates options with Auto at the top", () =>
+        {
+            string saved = "";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh([
+                new DeviceOption(3, "0", "NVIDIA GeForce RTX 3080", IsDefault: true, Vendor: 0x10de),
+                new DeviceOption(3, "1", "Intel(R) UHD Graphics 770", Vendor: 0x8086)
+            ]);
+            Equal(3, selector.Options.Count);
+            Equal("", selector.Options[0].Id);
+            Equal("Авто", selector.Options[0].Name);
+            Equal("0", selector.Options[1].Id);
+            Equal("NVIDIA GeForce RTX 3080", selector.Options[1].Name);
+            Equal("1", selector.Options[2].Id);
+            Equal("Intel(R) UHD Graphics 770", selector.Options[2].Name);
+        });
+        Test("gpu selector with custom unavailable caption provider uses localized caption", () =>
+        {
+            string saved = "nonexistent_gpu";
+            var selector = new DeviceSelectionViewModel(3, () => "Авто", () => "Unavailable · saved GPU is not available", () => saved, value => saved = value);
+            selector.Refresh([
+                new DeviceOption(3, "0", "NVIDIA GeForce RTX 3080", IsDefault: true, Vendor: 0x10de)
+            ]);
+            Equal(3, selector.Options.Count);
+            Equal("Unavailable · saved GPU is not available", selector.Options.Single(d => d.Id == "nonexistent_gpu").Name);
+            Equal("nonexistent_gpu", saved);
+        });
+        Test("gpu selector selecting different GPU mutates saved setting", () =>
+        {
+            string saved = "";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh([
+                new DeviceOption(3, "0", "NVIDIA GeForce RTX 3080", IsDefault: true, Vendor: 0x10de),
+                new DeviceOption(3, "1", "Intel(R) UHD Graphics 770", Vendor: 0x8086)
+            ]);
+            selector.SelectedId = "1";
+            Equal("1", saved);
+            selector.SelectedId = "";
+            Equal("", saved);
+        });
+        Test("gpu selector numeric index isolation: saved ID '2' does not match adapter with digit '2' in name", () =>
+        {
+            string saved = "2";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh([
+                new DeviceOption(3, "0", "Intel(R) UHD Graphics 770", IsDefault: true, Vendor: 0x8086),
+                new DeviceOption(3, "1", "NVIDIA GeForce RTX 2070", Vendor: 0x10de)
+            ]);
+            // Adapter 1 name contains '2', but ID is '1', so ID '2' is unavailable
+            var opt = selector.Options.Single(d => d.Id == "2");
+            True(opt.Name.Contains("Недоступно"));
+            Equal("2", saved);
+        });
+        Test("gpu selector negative index survives safely as unavailable option", () =>
+        {
+            string saved = "-1";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh([
+                new DeviceOption(3, "0", "NVIDIA GeForce RTX 3080", IsDefault: true, Vendor: 0x10de)
+            ]);
+            Equal(3, selector.Options.Count);
+            Equal("-1", selector.Options[2].Id);
+            True(selector.Options[2].Name.Contains("Недоступно"));
+        });
+        Test("gpu selector multiple GPUs with same model description preserve separate indexed IDs", () =>
+        {
+            string saved = "1";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh([
+                new DeviceOption(3, "0", "NVIDIA GeForce RTX 4090", IsDefault: true, Vendor: 0x10de),
+                new DeviceOption(3, "1", "NVIDIA GeForce RTX 4090", IsDefault: false, Vendor: 0x10de)
+            ]);
+            Equal(3, selector.Options.Count);
+            Equal("0", selector.Options[1].Id);
+            Equal("1", selector.Options[2].Id);
+            Equal("1", selector.SelectedId);
+            Equal("NVIDIA GeForce RTX 4090", selector.Options[2].Name);
+        });
+        Test("gpu selector survives transient null selection without clearing setting", () =>
+        {
+            string saved = "0";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh([
+                new DeviceOption(3, "0", "NVIDIA GeForce RTX 3080", IsDefault: true, Vendor: 0x10de)
+            ]);
+            selector.SelectedId = null;
+            Equal("0", saved);
+            Equal("0", selector.SelectedId);
+        });
+        Test("nvidia keeper ready event handles signaling, reset and disposal safely", () =>
+        {
+            string eventName = @"Local\HuntReplay.TestReady." + Guid.NewGuid().ToString("N");
+            using var ev = new EventWaitHandle(false, EventResetMode.ManualReset, eventName, out bool createdNew);
+            True(createdNew);
+            False(ev.WaitOne(0));
+            ev.Set();
+            True(ev.WaitOne(0));
+            ev.Reset();
+            False(ev.WaitOne(0));
+        });
     }
 }

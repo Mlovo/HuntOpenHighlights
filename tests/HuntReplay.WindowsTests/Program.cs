@@ -34,7 +34,7 @@ internal static class Program
                 e.Handled = true;
                 failed++;
             };
-            foreach (int kind in new[] { 0, 1, 2 })
+            foreach (int kind in new[] { 0, 1, 2, 3 })
             {
                 Test($"device kind {kind}: default survives repeated refresh", () => WithSelector(kind, "", (s, box, read, _) =>
                 {
@@ -221,16 +221,17 @@ internal static class Program
     }
 
     private static DeviceOption[] Devices(int kind) =>
-        [new(kind, "first", "First"), new(kind, "second", "Second"), new((kind + 1) % 3, "wrong-kind", "Exclude me")];
+        [new(kind, "first", "First"), new(kind, "second", "Second"), new((kind + 1) % 4, "wrong-kind", "Exclude me")];
 
     private static void WithSelector(int kind, string initial, Action<DeviceSelectionViewModel, ComboBox, Func<string>, Action<string>> test)
     {
         var settings = new StudioSettings();
-        string Read() => kind switch { 0 => settings.Video.MonitorDevice, 1 => settings.Audio.OutputDeviceId, _ => settings.Audio.MicrophoneDeviceId };
+        string Read() => kind switch { 0 => settings.Video.MonitorDevice, 1 => settings.Audio.OutputDeviceId, 3 => settings.Video.GpuDevice, _ => settings.Audio.MicrophoneDeviceId };
         void Write(string id)
         {
             if (kind == 0) settings.Video.MonitorDevice = id;
             else if (kind == 1) settings.Audio.OutputDeviceId = id;
+            else if (kind == 3) settings.Video.GpuDevice = id;
             else settings.Audio.MicrophoneDeviceId = id;
         }
         Write(initial);

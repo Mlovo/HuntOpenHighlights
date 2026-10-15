@@ -31,7 +31,8 @@ public partial class App : Application
         base.OnStartup(e);
         if (e.Args.Length >= 2 && e.Args[0] == "--nvidia-service-keeper" && int.TryParse(e.Args[1], out int mainPid))
         {
-            NvidiaServiceManager.RunKeeper(mainPid);
+            var extraServices = e.Args.Skip(2).ToArray();
+            NvidiaServiceManager.RunKeeper(mainPid, extraServices);
             Shutdown(0);
             return;
         }
@@ -108,7 +109,7 @@ public partial class App : Application
             if (startInTray) { window.ShowInTaskbar = false; window.WindowState = WindowState.Minimized; }
             window.Show();
             if (startInTray) window.Hide();
-            await NvidiaServiceManager.EnsureServicePausedAsync(log);
+            await Task.Run(() => NvidiaServiceManager.EnsureServicePausedAsync(log));
             pipe.Start();
             await model.InitializeAsync(window);
             if (storageWarning is not null) model.Error(new IOException(storageWarning));

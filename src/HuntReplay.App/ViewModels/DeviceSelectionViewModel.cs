@@ -37,9 +37,12 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
 
     public IReadOnlyList<DeviceOption> Options { get => options; private set => Set(ref options, value); }
 
-    private string UnavailableCaption => unavailableCaptionProvider?.Invoke() ?? (kind == 0
-        ? "Недоступно · сохранённый монитор не подключён"
-        : "Недоступно · сохранённое устройство не подключено");
+    private string UnavailableCaption => unavailableCaptionProvider?.Invoke() ?? (kind switch
+    {
+        0 => "Недоступно · сохранённый монитор не подключён",
+        3 => "Недоступно · сохранённая видеокарта недоступна",
+        _ => "Недоступно · сохранённое устройство не подключено"
+    });
 
     public string? SelectedId
     {

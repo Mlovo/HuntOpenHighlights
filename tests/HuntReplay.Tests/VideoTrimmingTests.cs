@@ -485,10 +485,62 @@ public static partial class Program
                 }
             }));
 
+            Test("native trim non-keyframe start produces exact duration without keyframe bleed", () => InTemp(dir =>
+            {
+                string source = GenerateSampleClip(dir, "source_non_keyframe.mp4", 6.0, hasAudio: true);
+                string target = Path.Combine(dir, "target_exact_1_5s.mp4");
+
+                // Mid-GOP cut: keyframes at 0.0s, 1.0s, 2.0s, 3.0s, 4.0s; cut [2.5s -> 4.0s] requested duration is 1.5s
+                int res = NativeTrimInterop.hr_trim(source, target, 2.5, 4.0, 1, null, IntPtr.Zero);
+                Equal(0, res);
+                True(File.Exists(target));
+
+                var probe = ProbeMedia(target);
+                True(Math.Abs(probe.Duration - 1.5) < 0.05);
+                True(probe.VideoStreams.Contains("h264"));
+                True(probe.AudioStreams.Contains("aac"));
+
+                int openRes = NativeTrimInterop.hr_player_open(target, out IntPtr player, out int w, out int h, out double dur);
+                Equal(0, openRes);
+                try
+                {
+                    True(w > 0 && h > 0);
+                    True(Math.Abs(dur - 1.5) < 0.05);
+                }
+                finally
+                {
+                    NativeTrimInterop.hr_player_close(player);
+                }
+            }));
+
+            Test("native trim non-keyframe start with accurate: 0 automatically re-encodes to eliminate bleed", () => InTemp(dir =>
+            {
+                string source = GenerateSampleClip(dir, "source_auto_reencode.mp4", 6.0, hasAudio: true);
+                string target = Path.Combine(dir, "target_auto_1_5s.mp4");
+
+                // Cutting at non-keyframe timestamp 2.5s must not bleed from 2.0s even when accurate == 0
+                int res = NativeTrimInterop.hr_trim(source, target, 2.5, 4.0, 0, null, IntPtr.Zero);
+                Equal(0, res);
+                True(File.Exists(target));
+
+                var probe = ProbeMedia(target);
+                True(Math.Abs(probe.Duration - 1.5) < 0.05);
+            }));
+
             await TestAsync("service trim executes end-to-end via VideoTrimmingService", async () =>
             {
-                string appDll = Path.GetFullPath("src/HuntReplay.App/bin/x64/Debug/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll");
-                if (!File.Exists(appDll)) return;
+                string[] candidates = [
+                    Path.GetFullPath("src/HuntReplay.App/bin/x64/Release/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll"),
+                    Path.GetFullPath("src/HuntReplay.App/bin/x64/Debug/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll"),
+                    Path.GetFullPath("src/HuntReplay.App/bin/Release/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll"),
+                    Path.GetFullPath("src/HuntReplay.App/bin/Debug/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll")
+                ];
+                string? appDll = null;
+                foreach (var c in candidates)
+                {
+                    if (File.Exists(c)) { appDll = c; break; }
+                }
+                if (appDll == null) return;
 
                 var asm = Assembly.LoadFrom(appDll);
                 var serviceType = asm.GetType("HuntReplay.App.Services.VideoTrimmingService")!;

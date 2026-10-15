@@ -13,6 +13,7 @@ internal struct NativeConfig
     public int MicrophoneEnabled;
     public float MicrophoneGain;
     public int SeparateMicrophone;
+    [MarshalAs(UnmanagedType.LPWStr)] public string GpuDevice;
 }
 
 [StructLayout(LayoutKind.Sequential)]

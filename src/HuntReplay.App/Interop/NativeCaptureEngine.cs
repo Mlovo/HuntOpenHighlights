@@ -136,7 +136,8 @@ internal sealed class NativeCaptureEngine : IDisposable
             GopSeconds = settings.Video.GopSeconds, Window = (ulong)window.ToInt64(), Monitor = selected.Handle,
             OutputDevice = settings.Audio.OutputDeviceId, MicrophoneDevice = settings.Audio.MicrophoneDeviceId,
             MicrophoneEnabled = settings.Audio.MicrophoneEnabled ? 1 : 0, MicrophoneGain = settings.Audio.MicrophoneVolume / 100f,
-            SeparateMicrophone = settings.Audio.Mode == AudioMode.SeparateTracks ? 1 : 0
+            SeparateMicrophone = settings.Audio.Mode == AudioMode.SeparateTracks ? 1 : 0,
+            GpuDevice = settings.Video.GpuDevice
         };
     }
 

@@ -19,6 +19,7 @@ struct hr_config {
     int32_t microphone_enabled;
     float microphone_gain;
     int32_t separate_microphone;
+    const wchar_t* gpu_device;
 };
 struct hr_packet {
     int32_t stream, keyframe;
