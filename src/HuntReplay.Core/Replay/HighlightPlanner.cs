@@ -1,4 +1,5 @@
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.Core.Replay;
 
@@ -65,7 +66,7 @@ public sealed class HighlightPlanner(ReplaySettings settings)
         if (plan is null)
         {
             // Bound outstanding leases even if an untrusted pipe peer floods new groups.
-            if (pending.Count >= 8) throw new InvalidOperationException("Очередь событий заполнена (8 клипов).");
+            if (pending.Count >= 8) throw new InvalidOperationException(Text.Format("Planner.QueueFull", 8));
             plan = new ClipPlan
             {
                 SessionId = evt.SessionId, GroupId = evt.GroupId,
@@ -73,7 +74,7 @@ public sealed class HighlightPlanner(ReplaySettings settings)
             };
             pending.Add(plan);
         }
-        if (plan.Events.Count >= 256) throw new InvalidOperationException("Слишком много событий в одной серии (256).");
+        if (plan.Events.Count >= 256) throw new InvalidOperationException(Text.Format("Planner.TooManyEvents", 256));
         seen.Add(dedup);
         seenOrder.Enqueue(dedup);
         while (seenOrder.Count > 4096) seen.Remove(seenOrder.Dequeue());

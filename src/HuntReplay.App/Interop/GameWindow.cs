@@ -43,17 +43,11 @@ internal static class GameWindow
 
     public static IntPtr Find(int additionalPid = 0)
     {
-        var primaryPids = new HashSet<int>();
-        if (additionalPid > 0) primaryPids.Add(additionalPid);
+        var candidatePids = new HashSet<int>();
+        if (additionalPid > 0) candidatePids.Add(additionalPid);
         foreach (var name in PrimaryGameProcessNames)
-        {
             foreach (var process in Process.GetProcessesByName(name))
-            {
-                using (process) primaryPids.Add(process.Id);
-            }
-        }
-
-        var candidatePids = new HashSet<int>(primaryPids);
+                using (process) candidatePids.Add(process.Id);
         if (candidatePids.Count == 0) return IntPtr.Zero;
 
         IntPtr bestWindow = IntPtr.Zero;
@@ -87,7 +81,6 @@ internal static class GameWindow
 
             int score = 100;
             if (additionalPid > 0 && windowPid == additionalPid) score += 10000;
-            if (primaryPids.Contains(windowPid)) score += 5000;
             if (string.Equals(className, "CryENGINE", StringComparison.OrdinalIgnoreCase)) score += 3000;
             if (title.IndexOf("Hunt", StringComparison.OrdinalIgnoreCase) >= 0) score += 1000;
             if (!isIconic)

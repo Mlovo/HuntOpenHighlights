@@ -112,6 +112,9 @@ class VideoEncoder {
     Buffer qsv_frames;
     ComPtr<ID3D11VideoProcessorEnumerator> enumerator;
     ComPtr<ID3D11VideoProcessor> processor;
+    // The capture texture only changes on resize; the view holds a reference, so the pointer cannot be recycled.
+    ComPtr<ID3D11VideoProcessorInputView> input_view;
+    ID3D11Texture2D* input_texture = nullptr;
     int input_width = 0, input_height = 0;
     int64_t last_forced_gop = -1;
     Emit emit;

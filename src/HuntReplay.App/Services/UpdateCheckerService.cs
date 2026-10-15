@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.App.Services;
 
@@ -33,7 +34,7 @@ public static class UpdateCheckerService
     public static string GetCurrentVersionString()
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version;
-        return version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.8";
+        return version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.0.0"; // Assembly version comes from <Version> in the csproj.
     }
 
     public static async Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
@@ -85,7 +86,7 @@ public static class UpdateCheckerService
         }
         catch (OperationCanceledException)
         {
-            return new UpdateCheckResult(false, currentVersionStr, null, null, null, "Проверка отменена");
+            return new UpdateCheckResult(false, currentVersionStr, null, null, null, Text.Get("Update.Cancelled"));
         }
         catch (Exception ex)
         {

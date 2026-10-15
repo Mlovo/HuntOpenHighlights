@@ -1,1 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk" />
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- Localization catalogs: one JSON file per language. The names carry no culture suffix (Strings.ru.json would be
+         moved into a satellite assembly by MSBuild), so the single-file build embeds them in this assembly. -->
+    <EmbeddedResource Include="Localization\*.json" LogicalName="HuntReplay.Core.Localization.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

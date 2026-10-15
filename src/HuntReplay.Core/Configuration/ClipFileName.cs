@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.Core.Configuration;
 
@@ -12,10 +13,10 @@ public static class ClipFileName
         if (string.IsNullOrWhiteSpace(template) || template.Length > 150 ||
             template.IndexOfAny(WindowsInvalid) >= 0 || template.Any(char.IsControl) ||
             !template.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Шаблон должен быть именем .mp4 без пути и спецсимволов Windows.");
+            throw new InvalidDataException(Text.Get("FileName.TemplateInvalid"));
         var remaining = template.Replace("{event}", "e").Replace("{date}", "d").Replace("{time}", "t");
         if (remaining.Contains('{') || remaining.Contains('}') || IsReserved(remaining))
-            throw new InvalidDataException("Разрешены только {event}, {date}, {time}; имя не должно быть системным.");
+            throw new InvalidDataException(Text.Get("FileName.TemplatePlaceholders"));
     }
 
     public static string Create(string template, string eventTag, DateTimeOffset time)
@@ -26,7 +27,7 @@ public static class ClipFileName
         var name = template.Replace("{event}", safeTag)
             .Replace("{date}", time.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
             .Replace("{time}", time.ToString("HH-mm-ss-fff", CultureInfo.InvariantCulture));
-        if (IsReserved(name)) throw new InvalidDataException("Зарезервированное имя Windows.");
+        if (IsReserved(name)) throw new InvalidDataException(Text.Get("FileName.Reserved"));
         return name;
     }
 

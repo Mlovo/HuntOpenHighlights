@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using HuntReplay.App.Interop;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.App.Services;
 
@@ -51,32 +52,32 @@ public sealed class VideoTrimmingService : IVideoTrimmingService
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
-            throw new ArgumentException("Исходный путь к видеофайлу не может быть пустым.", nameof(sourcePath));
+            throw new ArgumentException(Text.Get("Trim.SourceEmpty"), nameof(sourcePath));
         if (string.IsNullOrWhiteSpace(targetPath))
-            throw new ArgumentException("Целевой путь для сохранения не может быть пустым.", nameof(targetPath));
+            throw new ArgumentException(Text.Get("Trim.TargetEmpty"), nameof(targetPath));
 
         if (double.IsNaN(startSeconds) || double.IsInfinity(startSeconds))
-            throw new ArgumentException("Время начала содержит некорректное значение.", nameof(startSeconds));
+            throw new ArgumentException(Text.Get("Trim.StartInvalid"), nameof(startSeconds));
         if (double.IsNaN(endSeconds) || double.IsInfinity(endSeconds))
-            throw new ArgumentException("Время окончания содержит некорректное значение.", nameof(endSeconds));
+            throw new ArgumentException(Text.Get("Trim.EndInvalid"), nameof(endSeconds));
 
         string fullSource = Path.GetFullPath(sourcePath);
         string fullTarget = Path.GetFullPath(targetPath);
 
         if (!File.Exists(fullSource))
-            throw new FileNotFoundException("Исходный видеофайл не найден на диске.", fullSource);
+            throw new FileNotFoundException(Text.Get("Trim.SourceMissing"), fullSource);
 
         if (string.Equals(fullSource, fullTarget, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Целевой путь сохранения не может совпадать с исходным файлом.");
+            throw new InvalidOperationException(Text.Get("Trim.TargetIsSource"));
 
         if (startSeconds < 0.0)
-            throw new ArgumentOutOfRangeException(nameof(startSeconds), "Время начала фрагмента должно быть неотрицательным.");
+            throw new ArgumentOutOfRangeException(nameof(startSeconds), Text.Get("Trim.StartNegative"));
 
         if (endSeconds <= startSeconds)
-            throw new ArgumentException("Время окончания фрагмента должно строго превышать время начала.", nameof(endSeconds));
+            throw new ArgumentException(Text.Get("Trim.EndBeforeStart"), nameof(endSeconds));
 
         if (endSeconds - startSeconds < 0.5)
-            throw new InvalidOperationException("Длительность фрагмента должна составлять не менее 0.5 с.");
+            throw new InvalidOperationException(Text.Get("Trim.TooShort"));
 
         string? targetDir = Path.GetDirectoryName(fullTarget);
         if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
@@ -132,13 +133,13 @@ public sealed class VideoTrimmingService : IVideoTrimmingService
                 string? nativeError = NativeMethods.GetLastError();
                 string message = !string.IsNullOrWhiteSpace(nativeError)
                     ? nativeError
-                    : "Ошибка мультимедийного движка при обрезке видео.";
+                    : Text.Get("Trim.EngineError");
                 throw new InvalidOperationException(message);
             }
 
             if (!File.Exists(fullTarget))
             {
-                throw new IOException("Движок сообщил об успехе, но выходной файл отсутствует на диске.");
+                throw new IOException(Text.Get("Trim.OutputMissing"));
             }
 
             progress?.Report(1.0);
@@ -165,7 +166,7 @@ public sealed class VideoTrimmingService : IVideoTrimmingService
             if (!File.Exists(candidate)) return candidate;
         }
 
-        return Path.Combine(dir, $"{nameWithoutExt}_trimmed_{Guid.NewGuid():N[..8]}{ext}");
+        return Path.Combine(dir, $"{nameWithoutExt}_trimmed_{Guid.NewGuid().ToString("N")[..8]}{ext}");
     }
 
     private static void TryCleanupFile(string path)

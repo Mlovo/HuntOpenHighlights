@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.Core.Configuration;
 
@@ -13,16 +14,16 @@ public sealed class SettingsStore(string path)
         try
         {
             var info = new FileInfo(FilePath);
-            if (info.Length > 1024 * 1024) throw new InvalidDataException("config.json превышает 1 МБ.");
+            if (info.Length > 1024 * 1024) throw new InvalidDataException(Text.Get("Settings.FileTooLarge"));
             var value = JsonSerializer.Deserialize<StudioSettings>(File.ReadAllText(FilePath), StudioSettings.JsonOptions)
-                ?? throw new InvalidDataException("Пустой config.json.");
+                ?? throw new InvalidDataException(Text.Get("Settings.FileEmpty"));
             value.Validate();
             return value;
         }
         catch (Exception ex) when (ex is JsonException or InvalidDataException or IOException or UnauthorizedAccessException)
         {
             // Preserve corrupt/future configs. The user can inspect them before saving again.
-            LoadWarning = $"Настройки не загружены: {ex.Message} Исходный config.json сохранён.";
+            LoadWarning = Text.Format("Settings.LoadFailed", ex.Message);
             return new();
         }
     }

@@ -91,6 +91,6 @@ internal static class NativeMethods
 
     internal static void Check(int result)
     {
-        if (result < 0) throw new InvalidOperationException(Marshal.PtrToStringUni(hr_last_error()) ?? "Ошибка мультимедийного движка.");
+        if (result < 0) throw new InvalidOperationException(Marshal.PtrToStringUni(hr_last_error()) ?? HuntReplay.Core.Localization.Text.Get("Native.GenericError"));
     }
 }

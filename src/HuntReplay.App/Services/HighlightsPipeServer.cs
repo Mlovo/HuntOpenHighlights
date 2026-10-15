@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using Google.Protobuf;
+using HuntReplay.Core.Localization;
 using HuntReplay.Protocol;
 using Microsoft.Win32.SafeHandles;
 
@@ -31,17 +32,17 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
             var first = NewPipe(first: true);
             listening = true;
             listener = Task.Run(() => ListenAsync(first));
-            log.Write(@"IPC слушает \\.\pipe\NvMessageBusBroadcast");
+            log.Write(Text.Format("Ipc.Listening", @"\\.\pipe\" + PipeName));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             if (SelfInstaller.IsNvidiaActive())
             {
-                Failure = "Канал занят активной службой NVIDIA (NvContainer). Разрешите её временную приостановку при запуске или отключите Highlights в оверлее NVIDIA.";
+                Failure = Text.Get("Ipc.BusyNvidia");
             }
             else
             {
-                Failure = "Канал занят другой программой (NVIDIA App / старый сервер). Перехватчик отключён, чтобы не нарушать работу системы. " + ex.Message;
+                Failure = Text.Format("Ipc.BusyOther", ex.Message);
             }
             log.Write(Failure, "ERROR");
         }
@@ -58,11 +59,20 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
         {
             while (!stop.IsCancellationRequested)
             {
-                await next.WaitForConnectionAsync(stop.Token).ConfigureAwait(false);
+                try { await next.WaitForConnectionAsync(stop.Token).ConfigureAwait(false); }
+                catch (IOException ex)
+                {
+                    // A client that connects and drops immediately fails only this instance.
+                    log.Write(Text.Format("Ipc.ConnectFailed", ex.Message), "WARN");
+                    next.Dispose();
+                    next = NewPipe(first: false);
+                    await Task.Delay(100, stop.Token).ConfigureAwait(false);
+                    continue;
+                }
                 var connected = next;
                 // Keep a listening instance alive for the entire lifetime of the server.
                 next = NewPipe(first: false);
-                if (clients.Count >= 14) { connected.Dispose(); log.Write("IPC: превышен лимит подключений.", "WARN"); continue; }
+                if (clients.Count >= 14) { connected.Dispose(); log.Write(Text.Get("Ipc.TooManyClients"), "WARN"); continue; }
                 int id = Interlocked.Increment(ref nextClient);
                 var task = HandleAsync(connected, id);
                 clients[id] = task;
@@ -73,7 +83,7 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Failure = ex.Message;
-            log.Write("IPC сервер остановлен: " + ex.Message, "ERROR");
+            log.Write(Text.Format("Ipc.ServerStopped", ex.Message), "ERROR");
         }
         finally { next.Dispose(); listening = false; StateChanged?.Invoke(); }
     }
@@ -104,12 +114,12 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) when (ex is IOException or InvalidProtocolBufferException or InvalidDataException or Win32Exception or InvalidOperationException)
-            { log.Write($"IPC клиент {id}: {ex.Message}", "WARN"); }
+            { log.Write(Text.Format("Ipc.ClientError", id, ex.Message), "WARN"); }
             finally
             {
                 games.TryRemove(id, out _);
                 StateChanged?.Invoke();
-                log.Write($"IPC клиент {id} отключён; ожидающие клипы не отменены.");
+                log.Write(Text.Format("Ipc.ClientDisconnected", id));
             }
         }
     }

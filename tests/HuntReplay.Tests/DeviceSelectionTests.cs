@@ -173,7 +173,8 @@ public static partial class Program
             Equal("0", saved);
             Equal("0", selector.SelectedId);
         });
-        Test("nvidia keeper ready event handles signaling, reset and disposal safely", () =>
+        // Named wait handles exist only on Windows; the core suite also runs on the Linux CI runner.
+        if (OperatingSystem.IsWindows()) Test("nvidia keeper ready event handles signaling, reset and disposal safely", () =>
         {
             string eventName = @"Local\HuntReplay.TestReady." + Guid.NewGuid().ToString("N");
             using var ev = new EventWaitHandle(false, EventResetMode.ManualReset, eventName, out bool createdNew);

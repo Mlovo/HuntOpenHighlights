@@ -20,7 +20,8 @@ namespace HuntReplay.App.Views;
 public partial class GalleryView : UserControl
 {
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(20) };
-    private readonly Dictionary<int, BitmapSource> previewCache = new();
+    // Written on the UI thread, read by the background thumbnail preload.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, BitmapSource> previewCache = new();
     private readonly object playerLock = new();
     private CancellationTokenSource? preloadCts;
     private CancellationTokenSource? previewCts;
@@ -67,7 +68,7 @@ public partial class GalleryView : UserControl
             playing = false;
             PlayButton.Content = "▶";
             if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
-            if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Предпросмотр", "Preview");
+            if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
             timer.Stop();
         }
         if (isPlaying == 1)
@@ -93,7 +94,7 @@ public partial class GalleryView : UserControl
                     playing = false;
                     PlayButton.Content = "▶";
                     if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
-                    if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Предпросмотр", "Preview");
+                    if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
                     NativeMethods.hr_player_pause(playerHandle);
                     timer.Stop();
                     isPreviewingFragment = false;
@@ -166,16 +167,13 @@ public partial class GalleryView : UserControl
 
         TrimButton.IsEnabled = false;
 
-        IntPtr handleToClose = IntPtr.Zero;
-        lock (playerLock)
-        {
-            handleToClose = playerHandle;
-            playerHandle = IntPtr.Zero;
-        }
-
+        IntPtr handleToClose = Interlocked.Exchange(ref playerHandle, IntPtr.Zero);
         if (handleToClose != IntPtr.Zero)
         {
-            NativeMethods.hr_player_close(handleToClose);
+            // Preview/seek workers hold playerLock for a whole decode; the UI thread must not wait for them.
+            // Pause is lock-free in the native player and silences audio before the deferred close.
+            NativeMethods.hr_player_pause(handleToClose);
+            Task.Run(() => { lock (playerLock) NativeMethods.hr_player_close(handleToClose); });
         }
 
         bitmap = null;
@@ -268,7 +266,7 @@ public partial class GalleryView : UserControl
         catch (Exception ex)
         {
             PlayerHint.Visibility = Visibility.Visible;
-            PlayerHintText.Text = (LocalizationService.Instance.IsEnglish ? "Player error: " : "Ошибка плеера: ") + ex.Message;
+            PlayerHintText.Text = Loc.Format("Gallery.PlayerError", ex.Message);
         }
     }
 
@@ -624,10 +622,9 @@ public partial class GalleryView : UserControl
         }
 
         int percent = (int)Math.Round(currentVolume * 100);
-        bool en = LocalizationService.Instance.IsEnglish;
         if (VolumeSlider is not null)
         {
-            VolumeSlider.ToolTip = (en ? "Volume: " : "Громкость: ") + $"{percent}%";
+            VolumeSlider.ToolTip = Loc.Format("Gallery.VolumeTooltip", percent);
         }
 
         if (VolumeIcon is not null && VolumeButton is not null)
@@ -635,17 +632,17 @@ public partial class GalleryView : UserControl
             if (currentVolume <= 0.001)
             {
                 VolumeIcon.Text = "\uE74F";
-                VolumeButton.ToolTip = en ? "Unmute" : "Включить звук";
+                VolumeButton.ToolTip = Loc["Gallery.Unmute"];
             }
             else if (currentVolume < 0.5)
             {
                 VolumeIcon.Text = "\uE993";
-                VolumeButton.ToolTip = (en ? "Mute" : "Выключить звук") + $" ({percent}%)";
+                VolumeButton.ToolTip = Loc.Format("Gallery.MuteTooltip", percent);
             }
             else
             {
                 VolumeIcon.Text = "\uE767";
-                VolumeButton.ToolTip = (en ? "Mute" : "Выключить звук") + $" ({percent}%)";
+                VolumeButton.ToolTip = Loc.Format("Gallery.MuteTooltip", percent);
             }
         }
     }
@@ -752,7 +749,7 @@ public partial class GalleryView : UserControl
             playing = false;
             PlayButton.Content = "▶";
             if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
-            if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Предпросмотр", "Preview");
+            if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
             NativeMethods.hr_player_pause(playerHandle);
             timer.Stop();
         }
@@ -929,7 +926,7 @@ public partial class GalleryView : UserControl
         playing = false;
         PlayButton.Content = "▶";
         if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
-        if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Предпросмотр", "Preview");
+        if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
         NativeMethods.hr_player_pause(playerHandle);
         timer.Stop();
         isPreviewingFragment = false;
@@ -957,7 +954,7 @@ public partial class GalleryView : UserControl
             playing = true;
             PlayButton.Content = "Ⅱ";
             if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE769";
-            if (PreviewRangeText is not null) PreviewRangeText.Text = GetLoc("Пауза", "Pause");
+            if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Pause"];
             NativeMethods.hr_player_play(playerHandle);
             timer.Start();
         }
@@ -973,13 +970,13 @@ public partial class GalleryView : UserControl
 
         if (double.IsNaN(start) || double.IsNaN(end) || start < 0.0 || end > naturalDuration)
         {
-            UpdateStatusMessage(GetLoc("Некорректные границы фрагмента.", "Invalid trim boundaries."));
+            UpdateStatusMessage(Loc["Gallery.InvalidBoundaries"]);
             return;
         }
 
         if (end <= start || end - start < MinTrimDuration)
         {
-            UpdateStatusMessage(GetLoc("Фрагмент должен быть не менее 0.5 с.", "Fragment must be at least 0.5s."));
+            UpdateStatusMessage(Loc.Format("Gallery.FragmentTooShort", MinTrimDuration));
             return;
         }
 
@@ -991,10 +988,10 @@ public partial class GalleryView : UserControl
 
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
-            Title = GetLoc("Сохранить фрагмент видео", "Save Video Fragment"),
+            Title = Loc["Gallery.SaveDialogTitle"],
             InitialDirectory = initialDir,
             FileName = defaultName,
-            Filter = GetLoc("Видео MP4 (*.mp4)|*.mp4", "MP4 Video (*.mp4)|*.mp4"),
+            Filter = Loc["Gallery.Mp4Filter"],
             DefaultExt = ".mp4",
             AddExtension = true,
             OverwritePrompt = true
@@ -1007,9 +1004,9 @@ public partial class GalleryView : UserControl
 
         if (string.Equals(Path.GetFullPath(targetPath), Path.GetFullPath(currentPath), StringComparison.OrdinalIgnoreCase))
         {
-            string errorMsg = GetLoc("Нельзя перезаписывать исходный видеофайл.", "Cannot overwrite the source video file.");
+            string errorMsg = Loc["Gallery.CannotOverwriteSource"];
             MessageBox.Show(window, errorMsg,
-                GetLoc("Ошибка экспорта", "Export Error"),
+                Loc["Gallery.ExportErrorTitle"],
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1024,7 +1021,8 @@ public partial class GalleryView : UserControl
         TrimProgressBar.Value = 0;
         TrimProgressPercent.Text = "0%";
         CancelExportButton.IsEnabled = true;
-        CancelExportButton.Content = GetLoc("Отмена", "Cancel");
+        CancelExportButton.Content = Loc["Common.Cancel"];
+        TrimProgressStatus.Text = Loc.Format("Gallery.SavingProgress", 0);
 
         var progress = new Progress<double>(p =>
         {
@@ -1032,8 +1030,7 @@ public partial class GalleryView : UserControl
             int percentage = (int)Math.Clamp(Math.Round(p * 100.0), 0, 100);
             TrimProgressBar.Value = percentage;
             TrimProgressPercent.Text = $"{percentage}%";
-            TrimProgressStatus.Text = string.Format(
-                GetLoc("Сохранение фрагмента… {0}%", "Saving fragment… {0}%"), percentage);
+            TrimProgressStatus.Text = Loc.Format("Gallery.SavingProgress", percentage);
         });
 
         try
@@ -1043,18 +1040,18 @@ public partial class GalleryView : UserControl
 
             if (!File.Exists(exportedFile))
             {
-                throw new IOException(GetLoc("Файл фрагмента отсутствует на диске после сохранения.", "Fragment file is missing on disk after saving."));
+                throw new IOException(Loc["Gallery.FragmentMissing"]);
             }
 
             await HandleExportSuccess(exportedFile, start, end);
         }
         catch (OperationCanceledException)
         {
-            UpdateStatusMessage(GetLoc("Сохранение отменено.", "Export cancelled."));
+            UpdateStatusMessage(Loc["Gallery.ExportCancelled"]);
         }
         catch (Exception ex)
         {
-            UpdateStatusMessage(GetLoc("Ошибка экспорта: ", "Export error: ") + ex.Message);
+            UpdateStatusMessage(Loc.Format("Gallery.ExportError", ex.Message));
             try { if (File.Exists(targetPath)) File.Delete(targetPath); } catch { }
         }
         finally
@@ -1072,7 +1069,7 @@ public partial class GalleryView : UserControl
         if (exportCts is not null && !exportCts.IsCancellationRequested)
         {
             CancelExportButton.IsEnabled = false;
-            CancelExportButton.Content = GetLoc("Отмена…", "Cancelling…");
+            CancelExportButton.Content = Loc["Common.Cancelling"];
             exportCts.Cancel();
         }
     }
@@ -1080,18 +1077,17 @@ public partial class GalleryView : UserControl
     private async Task HandleExportSuccess(string exportedFile, double start, double end)
     {
         var mainVm = DataContext as MainViewModel;
-        string appDataRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HuntReplayStudio");
-        string libraryRoot = Path.Combine(appDataRoot, "library");
+        string? libraryRoot = mainVm?.LibraryRoot;
         string clipsDir = Path.GetDirectoryName(currentPath!) ?? "";
 
-        bool isInsideClipsDir = !string.IsNullOrEmpty(clipsDir) &&
+        bool isInsideClipsDir = libraryRoot is not null && !string.IsNullOrEmpty(clipsDir) &&
             string.Equals(Path.GetFullPath(Path.GetDirectoryName(exportedFile)!), Path.GetFullPath(clipsDir), StringComparison.OrdinalIgnoreCase);
 
         if (isInsideClipsDir)
         {
             try
             {
-                var library = new ClipLibrary(clipsDir, libraryRoot);
+                var library = new ClipLibrary(clipsDir, libraryRoot!);
                 var metadata = new ClipMetadata
                 {
                     FileName = Path.GetFileName(exportedFile),
@@ -1109,7 +1105,8 @@ public partial class GalleryView : UserControl
                 {
                     NativeCaptureEngine.SaveThumbnail(exportedFile, registeredClip.ThumbnailPath);
                 }
-                catch { }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+                { /* A missing preview image never fails the export; the gallery shows a placeholder. */ }
 
                 if (mainVm is not null)
                 {
@@ -1117,7 +1114,12 @@ public partial class GalleryView : UserControl
                     mainVm.SelectedClip = mainVm.Clips.FirstOrDefault(c => c.Clip.Metadata.Id == registeredClip.Metadata.Id);
                 }
             }
-            catch { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                // The MP4 is on disk; say why it is missing from the gallery instead of reporting a clean success.
+                UpdateStatusMessage(Loc.Format("Gallery.SavedNotRegistered", ex.Message));
+                return;
+            }
         }
 
         try
@@ -1126,7 +1128,7 @@ public partial class GalleryView : UserControl
         }
         catch { }
 
-        string saveNotice = (LocalizationService.Instance.IsEnglish ? "Fragment saved: " : "Фрагмент сохранён: ") + Path.GetFileName(exportedFile);
+        string saveNotice = Loc.Format("Gallery.FragmentSaved", Path.GetFileName(exportedFile));
         UpdateStatusMessage(saveNotice);
 
         ExitTrimMode();
@@ -1214,29 +1216,13 @@ public partial class GalleryView : UserControl
         }
     }
 
-    private string GetLoc(string ru, string en) =>
-        LocalizationService.Instance.IsEnglish ? en : ru;
+    private static LocalizationService Loc => LocalizationService.Instance;
 
+    // Static labels are XAML bindings to Loc[...]; only text that the code also changes at runtime is set here.
     private void UpdateLocalizedLabels()
     {
-        bool en = LocalizationService.Instance.IsEnglish;
-        if (TrimButtonText is not null) TrimButtonText.Text = en ? "Trim Video" : "Обрезать видео";
-        if (TrimButton is not null) TrimButton.ToolTip = en ? "Trim and export video fragment" : "Обрезать и сохранить фрагмент";
-        if (SaveFragmentButton is not null) SaveFragmentButton.Content = en ? "Save Fragment" : "Сохранить фрагмент";
-        if (CancelTrimButton is not null) CancelTrimButton.Content = en ? "Cancel" : "Отмена";
-        if (CancelExportButton is not null) CancelExportButton.Content = en ? "Cancel" : "Отмена";
-        if (TrimStartLabel is not null) TrimStartLabel.Text = en ? "Start:" : "Начало:";
-        if (TrimEndLabel is not null) TrimEndLabel.Text = en ? "End:" : "Конец:";
-        if (TrimDurationLabel is not null) TrimDurationLabel.Text = en ? "Duration:" : "Длительность:";
-        if (PreviewRangeText is not null) PreviewRangeText.Text = isPreviewingFragment ? (en ? "Pause" : "Пауза") : (en ? "Preview" : "Предпросмотр");
-        if (JumpStartText is not null) JumpStartText.Text = en ? "To Start" : "К началу";
-        if (JumpStartButton is not null) JumpStartButton.ToolTip = en ? "Jump player to start [Home]" : "Перейти к началу фрагмента [Home]";
-        if (MarkInText is not null) MarkInText.Text = en ? "Set Start" : "Задать начало";
-        if (MarkInButton is not null) MarkInButton.ToolTip = en ? "Set start to current frame [I]" : "Установить начало по текущему кадру [I]";
-        if (JumpEndText is not null) JumpEndText.Text = en ? "To End" : "К концу";
-        if (JumpEndButton is not null) JumpEndButton.ToolTip = en ? "Jump player to end [End]" : "Перейти к концу фрагмента [End]";
-        if (MarkOutText is not null) MarkOutText.Text = en ? "Set End" : "Задать конец";
-        if (MarkOutButton is not null) MarkOutButton.ToolTip = en ? "Set end to current frame [O]" : "Установить конец по текущему кадру [O]";
+        if (CancelExportButton is not null && CancelExportButton.IsEnabled) CancelExportButton.Content = Loc["Common.Cancel"];
+        if (PreviewRangeText is not null) PreviewRangeText.Text = Loc[isPreviewingFragment ? "Gallery.Pause" : "Gallery.Preview"];
         if (PlayerHintText is not null && (playerHandle == IntPtr.Zero || PlayerHint.Visibility == Visibility.Visible))
         {
             PlayerHintText.Text = LocalizationService.Instance["Gallery.SelectClipHint"];

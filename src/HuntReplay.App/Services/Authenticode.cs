@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.App.Services;
 
@@ -19,13 +20,13 @@ internal static class Authenticode
         try
         {
             var result = WinVerifyTrust(new IntPtr(-1), in action, ref data);
-            if (result != 0) throw new InvalidDataException($"Подпись MessageBus.dll не прошла WinVerifyTrust (0x{result:X8}). Проверьте системные корневые сертификаты и дату Windows.");
+            if (result != 0) throw new InvalidDataException(Text.Format("Install.SignatureInvalid", $"0x{result:X8}"));
 #pragma warning disable SYSLIB0057 // .NET 8 Authenticode certificate API; not a PFX import.
             using var signed = X509Certificate.CreateFromSignedFile(path);
             using var certificate = new X509Certificate2(signed);
 #pragma warning restore SYSLIB0057
             if (!certificate.GetNameInfo(X509NameType.SimpleName, false).Equals("NVIDIA Corporation", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("Издатель MessageBus.dll — не NVIDIA Corporation.");
+                throw new InvalidDataException(Text.Get("Install.PublisherNotNvidia"));
         }
         finally
         {

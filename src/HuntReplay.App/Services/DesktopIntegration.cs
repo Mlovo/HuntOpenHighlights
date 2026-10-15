@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Localization;
 using HuntReplay.Core.Storage;
 using Microsoft.Win32;
 
@@ -27,7 +28,7 @@ internal sealed class HotkeyService : IDisposable
         if (virtualKey == CurrentKey) return;
         int id = activeId == 0x4811 ? 0x4812 : 0x4811;
         if (!RegisterHotKey(source.Handle, id, 0x4000 /* MOD_NOREPEAT */, (uint)virtualKey))
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "Горячая клавиша уже занята. Выберите другую F-клавишу.");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), Text.Get("Hotkey.Busy"));
         if (activeId != 0) UnregisterHotKey(source.Handle, activeId);
         activeId = id; CurrentKey = virtualKey;
     }
@@ -52,7 +53,7 @@ internal static class DesktopIntegration
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
         if (enabled)
         {
-            var executable = Environment.ProcessPath ?? throw new IOException("Не найден путь .exe.");
+            var executable = Environment.ProcessPath ?? throw new IOException(Text.Get("Startup.ExePathUnknown"));
             key.SetValue("HuntReplayStudio", $"\"{executable}\" --tray" + (portable ? " --portable" : ""));
         }
         else key.DeleteValue("HuntReplayStudio", false);
@@ -74,7 +75,7 @@ internal static class DesktopIntegration
     public static void OpenWithDefaultPlayer(string file)
     {
         var full = Path.GetFullPath(file);
-        if (!File.Exists(full)) throw new FileNotFoundException("Клип не найден.", full);
+        if (!File.Exists(full)) throw new FileNotFoundException(Text.Get("Clip.NotFound"), full);
         Process.Start(new ProcessStartInfo(full) { UseShellExecute = true });
     }
 }

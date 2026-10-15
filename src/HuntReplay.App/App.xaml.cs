@@ -5,6 +5,7 @@ using HuntReplay.App.Services;
 using HuntReplay.App.ViewModels;
 using HuntReplay.App.Views;
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Localization;
 using Forms = System.Windows.Forms;
 
 namespace HuntReplay.App;
@@ -43,7 +44,7 @@ public partial class App : Application
                 using var mutex = new Mutex(false, @"Global\HuntReplayStudio.ShimSetup");
                 bool acquired;
                 try { acquired = mutex.WaitOne(TimeSpan.FromSeconds(5)); } catch (AbandonedMutexException) { acquired = true; }
-                if (!acquired) throw new IOException("Другой установщик уже работает.");
+                if (!acquired) throw new IOException(Text.Get("Install.AnotherRunning"));
                 try
                 {
                     if (e.Args.Contains("--uninstall-shim")) SelfInstaller.Uninstall();
@@ -52,13 +53,13 @@ public partial class App : Application
                 finally { mutex.ReleaseMutex(); }
                 Shutdown(0);
             }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "Установка HuntReplay Studio", MessageBoxButton.OK, MessageBoxImage.Error); Shutdown(1); }
+            catch (Exception ex) { MessageBox.Show(ex.Message, Text.Get("Install.Title"), MessageBoxButton.OK, MessageBoxImage.Error); Shutdown(1); }
             return;
         }
         try
         {
             if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
-                throw new PlatformNotSupportedException("Нужны Windows 10 (2004, build 19041) или Windows 11, x64.");
+                throw new PlatformNotSupportedException(Text.Get("Startup.UnsupportedWindows"));
             using var identity = WindowsIdentity.GetCurrent();
             var sid = identity.User?.Value ?? Environment.UserName;
             var name = @"Local\HuntReplayStudio." + sid;
@@ -66,7 +67,7 @@ public partial class App : Application
             if (!first)
             {
                 try { using var signal = EventWaitHandle.OpenExisting(name + ".Activate"); signal.Set(); }
-                catch (WaitHandleCannotBeOpenedException) { MessageBox.Show("HuntReplay Studio уже запущена. Проверьте системный трей."); }
+                catch (WaitHandleCannotBeOpenedException) { MessageBox.Show(Text.Get("Startup.AlreadyRunning")); }
                 Shutdown(); return;
             }
             activate = new EventWaitHandle(false, EventResetMode.AutoReset, name + ".Activate");
@@ -86,12 +87,14 @@ public partial class App : Application
             };
             var store = new SettingsStore(Path.Combine(root, "config.json"));
             var settings = store.Load();
+            // The saved language applies before any window or message box exists.
+            Text.SetLanguage(settings.System.Language);
             ThemeService.Apply(string.Equals(settings.System.Theme, "light", StringComparison.OrdinalIgnoreCase) ? AppTheme.Light : AppTheme.Dark);
             if (store.LoadWarning is { } warning) log.Write(warning, "WARN");
             string? storageWarning = null;
             try { Directory.CreateDirectory(settings.Storage.Directory); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            { storageWarning = "Хранилище недоступно; выберите другую папку в настройках. " + ex.Message; }
+            { storageWarning = Text.Format("Startup.StorageUnavailable", ex.Message); }
             if (!settings.System.FirstRunCompleted)
             {
                 var status = await Task.Run(SelfInstaller.Check);
@@ -114,11 +117,11 @@ public partial class App : Application
             await model.InitializeAsync(window);
             if (storageWarning is not null) model.Error(new IOException(storageWarning));
             if (store.LoadWarning is { } loadWarning) model.Error(new InvalidDataException(loadWarning));
-            log.Write("HuntReplay Studio готова. Ожидание игры.");
+            log.Write(Text.Get("Log.Ready"));
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "Не удалось запустить HuntReplay Studio", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(ex.Message, Text.Get("Startup.FailedTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
             await ExitAsync(1);
         }
     }
@@ -152,7 +155,7 @@ public partial class App : Application
                 finally { if (recorder is not null) await recorder.DisposeAsync(); }
             }
         }
-        catch (Exception ex) { log?.Write("Ошибка завершения: " + ex.Message, "ERROR"); code = 1; }
+        catch (Exception ex) { log?.Write(Text.Format("Log.ExitError", ex.Message), "ERROR"); code = 1; }
         finally
         {
             if (tray is not null) { tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Icon?.Dispose(); tray.Dispose(); }

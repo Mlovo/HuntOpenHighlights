@@ -15,7 +15,7 @@ internal sealed class InputDialog : Window
         var panel = new StackPanel { Margin = new Thickness(24) };
         panel.Children.Add(new TextBlock { Text = title, FontSize = 18, Margin = new Thickness(0, 0, 0, 20) });
         input = new TextBox { Text = value }; panel.Children.Add(input);
-        var saveLabel = Services.LocalizationService.Instance.IsEnglish ? "Save" : "Сохранить";
+        var saveLabel = Services.LocalizationService.Instance["Common.Save"];
         var button = new Button { Content = saveLabel, IsDefault = true, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 20, 0, 0), Style = (Style)FindResource("PrimaryButton") };
         button.Click += (_, _) => { DialogResult = true; };
         panel.Children.Add(button); Content = panel;

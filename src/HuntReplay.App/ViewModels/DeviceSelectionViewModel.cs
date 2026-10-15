@@ -1,4 +1,5 @@
 using HuntReplay.App.Interop;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.App.ViewModels;
 
@@ -39,9 +40,9 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
 
     private string UnavailableCaption => unavailableCaptionProvider?.Invoke() ?? (kind switch
     {
-        0 => "Недоступно · сохранённый монитор не подключён",
-        3 => "Недоступно · сохранённая видеокарта недоступна",
-        _ => "Недоступно · сохранённое устройство не подключено"
+        0 => Text.Get("Choice.MonitorUnavailable"),
+        3 => Text.Get("Choice.GpuUnavailable"),
+        _ => Text.Get("Choice.AudioUnavailable")
     });
 
     public string? SelectedId

@@ -13,24 +13,24 @@ internal sealed class ClipViewModel
     {
         get
         {
-            bool en = LocalizationService.Instance.IsEnglish;
+            var loc = LocalizationService.Instance;
             if (Clip.Metadata.EventTag.StartsWith("MULTI_KILL", StringComparison.Ordinal))
             {
                 var suffix = Clip.Metadata.EventTag.Split('_').FirstOrDefault(s => s.StartsWith('x'));
-                return (en ? "MULTI-KILL " : "МУЛЬТИ-КИЛЛ ") + suffix;
+                return loc.Format("Event.MultiKill", suffix);
             }
             return Clip.Metadata.EventTag switch
             {
-                "HUNTER_KILLED" => en ? "HUNTER KILLED" : "ОХОТНИК УБИТ",
-                "PLAYER_DOWNED" => en ? "HUNTER DOWNED" : "ОХОТНИК ПОВЕРЖЕН",
-                "MANUAL" => en ? "MANUAL REPLAY" : "РУЧНОЙ ПОВТОР",
+                "HUNTER_KILLED" => loc["Event.HunterKilled"],
+                "PLAYER_DOWNED" => loc["Event.PlayerDowned"],
+                "MANUAL" => loc["Event.Manual"],
                 _ => Clip.Metadata.EventTag.Replace('_', ' ')
             };
         }
     }
     public string Duration => TimeSpan.FromSeconds(Math.Max(0, Clip.Metadata.DurationSeconds)).ToString(@"mm\:ss");
-    public string Size => $"{Clip.Metadata.Bytes / 1024d / 1024:F1} МБ";
-    public string Date => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM · HH:mm");
+    public string Size => LocalizationService.Instance.Format("Unit.MegabytesValue", Clip.Metadata.Bytes / 1024d / 1024);
+    public string Date => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM · HH:mm", HuntReplay.Core.Localization.Text.Culture);
     public string Detail => $"{Date}   /   {Size}";
     public ImageSource? Thumbnail { get; }
     public ClipViewModel(LibraryClip clip)

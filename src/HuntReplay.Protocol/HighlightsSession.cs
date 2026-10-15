@@ -1,4 +1,5 @@
 using Google.Protobuf;
+using HuntReplay.Core.Localization;
 using HuntReplay.Core.Replay;
 using HuntReplay.Protocol.Generated;
 
@@ -60,7 +61,7 @@ public sealed class HighlightsSession
         if (!controlIdentifierLogged && bus.Uniqueid.Any(char.IsControl))
         {
             controlIdentifierLogged = true;
-            log($"IPC · BusMessage.uniqueid содержит управляющие символы ({DescribeControls(bus.Uniqueid)}); значение передано без изменений");
+            log(Text.Format("Ipc.ControlCharsInId", DescribeControls(bus.Uniqueid)));
         }
         // Routing identity can be omitted on subsequent messages on an already joined pipe.
         CheckText(bus.SourceSystem, 256, $"BusMessage.source_system ({kind})", allowEmpty: !bus.Joined);
@@ -94,7 +95,7 @@ public sealed class HighlightsSession
                 // The SDK call is correlatable: reject it without tearing down a healthy pipe.
                 response = Failure(ex.Message);
             }
-            if (response.Retval != 0) log($"IPC отказ #{ordinal} · {request.RequestCase} · {response.Retstatus}");
+            if (response.Retval != 0) log(Text.Format("Ipc.Refused", ordinal, request.RequestCase, response.Retstatus));
             var envelope = ReplyEnvelope(bus, "NvNode", "SDKAPI");
             envelope.Generic = new BusMessage.Types.Generic
             {
@@ -155,7 +156,7 @@ public sealed class HighlightsSession
                 authorized = true;
                 GameName = Clean(string.IsNullOrWhiteSpace(create.GameName) ? create.ClientProcessName : create.GameName);
                 GameChanged?.Invoke(GameName);
-                log($"SDK авторизован · {GameName} · scopes 1–7");
+                log(Text.Format("Ipc.Authorized", GameName));
                 break;
             case SDKIPCRequest.RequestOneofCase.ConfigureHighlightsRequest:
                 var highlights = request.ConfigureHighlightsRequest.HighlightTable;
@@ -165,7 +166,7 @@ public sealed class HighlightsSession
                 foreach (var item in highlights) CheckText(item.HighlightId, 128, "configureHighlightsRequest.highlightId");
                 definitions.Clear();
                 foreach (var item in highlights) definitions.Add(item.HighlightId);
-                log($"Зарегистрированы события · {string.Join(", ", definitions.Select(Clean))}");
+                log(Text.Format("Ipc.EventsRegistered", string.Join(", ", definitions.Select(Clean))));
                 break;
             case SDKIPCRequest.RequestOneofCase.OpenGroupRequest:
                 var group = request.OpenGroupRequest.GroupId;
@@ -176,7 +177,7 @@ public sealed class HighlightsSession
                     groups[group] = 0;
                     groupEpochs[group] = Guid.NewGuid().ToString("N");
                 }
-                log($"Матч начат · {Clean(group)}");
+                log(Text.Format("Ipc.MatchStarted", Clean(group)));
                 break;
             case SDKIPCRequest.RequestOneofCase.CloseGroupRequest:
                 // Do not cancel post-roll and do not delete real files on destroyHighlights.
@@ -189,7 +190,7 @@ public sealed class HighlightsSession
                 {
                     groups.Remove(close.GroupId); groupEpochs.Remove(close.GroupId); closedGroups.Remove(close.GroupId);
                 }
-                log($"Матч завершён · {Clean(close.GroupId)} · постзапись сохранена");
+                log(Text.Format("Ipc.MatchEnded", Clean(close.GroupId)));
                 break;
             case SDKIPCRequest.RequestOneofCase.SetVideoHighlightRequest:
                 var video = request.SetVideoHighlightRequest;
@@ -200,7 +201,7 @@ public sealed class HighlightsSession
                 if (!enabled(video.HighlightId))
                 {
                     // A user-disabled event is a valid no-op; log it so a missing clip is traceable.
-                    log($"IPC SDK #{currentOrdinal} · {Clean(video.HighlightId)} отключено в настройках; клип не запланирован");
+                    log(Text.Format("Ipc.EventDisabled", currentOrdinal, Clean(video.HighlightId)));
                     break;
                 }
                 // baseTimeStamp has an SDK-specific clock domain; never compare it to Unix time/QPC.
@@ -239,7 +240,7 @@ public sealed class HighlightsSession
                 if (request.RequestPermissionRequest.Scopes.Count > 32) return Failure("TOO_MANY_SCOPES");
                 break;
             case SDKIPCRequest.RequestOneofCase.OpenGroupSummaryRequest:
-                log("Игра запросила сводку; клипы доступны в галерее HuntReplay Studio.");
+                log(Text.Get("Ipc.SummaryRequested"));
                 break;
             case SDKIPCRequest.RequestOneofCase.SetScreenshotHighlightRequest:
             case SDKIPCRequest.RequestOneofCase.ToggleOverlayRequest:

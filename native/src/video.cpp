@@ -223,6 +223,7 @@ VideoEncoder::VideoEncoder(D3D& device, hr_config config, Emit callback) : d3d(d
     } else if (encoder == 3) {
         av_dict_set(&options, "preset", "veryfast", 0);
         av_dict_set(&options, "async_depth", "4", 0);
+        av_dict_set(&options, "forced_idr", "1", 0);
     } else {
         av_dict_set(&options, "preset", "veryfast", 0);
         av_dict_set(&options, "tune", "zerolatency", 0);
@@ -234,6 +235,7 @@ VideoEncoder::VideoEncoder(D3D& device, hr_config config, Emit callback) : d3d(d
 }
 
 void VideoEncoder::rebuild_processor(int width, int height) {
+    input_view.Reset(); input_texture = nullptr;
     processor.Reset(); enumerator.Reset();
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc{};
     desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
@@ -270,10 +272,13 @@ void VideoEncoder::encode(ID3D11Texture2D* bgra, int width, int height, int64_t 
     if (!processor || width != input_width || height != input_height) rebuild_processor(width, height);
     auto hardware = make_frame();
     avcheck(av_hwframe_get_buffer(frames.get(), hardware.get(), 0), "Acquire NV12 texture");
-    D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC iv{};
-    iv.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
-    ComPtr<ID3D11VideoProcessorInputView> input;
-    check(d3d.video_device->CreateVideoProcessorInputView(bgra, enumerator.Get(), &iv, &input));
+    if (!input_view || input_texture != bgra) {
+        D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC iv{};
+        iv.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+        input_view.Reset();
+        check(d3d.video_device->CreateVideoProcessorInputView(bgra, enumerator.Get(), &iv, &input_view));
+        input_texture = bgra;
+    }
     D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC ov{};
     auto* nv12 = reinterpret_cast<ID3D11Texture2D*>(hardware->data[0]);
     D3D11_TEXTURE2D_DESC target_desc{}; nv12->GetDesc(&target_desc);
@@ -289,7 +294,7 @@ void VideoEncoder::encode(ID3D11Texture2D* bgra, int width, int height, int64_t 
     ComPtr<ID3D11VideoProcessorOutputView> output;
     check(d3d.video_device->CreateVideoProcessorOutputView(
         reinterpret_cast<ID3D11Texture2D*>(hardware->data[0]), enumerator.Get(), &ov, &output));
-    D3D11_VIDEO_PROCESSOR_STREAM stream{}; stream.Enable = TRUE; stream.pInputSurface = input.Get();
+    D3D11_VIDEO_PROCESSOR_STREAM stream{}; stream.Enable = TRUE; stream.pInputSurface = input_view.Get();
     check(d3d.video_context->VideoProcessorBlt(processor.Get(), output.Get(), 0, 1, &stream));
     d3d.context->Flush();
     Frame mapped;

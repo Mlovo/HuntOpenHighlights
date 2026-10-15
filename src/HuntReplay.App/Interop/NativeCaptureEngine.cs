@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Localization;
 using HuntReplay.Core.Media;
 
 namespace HuntReplay.App.Interop;
@@ -12,7 +13,7 @@ internal sealed class NativeCaptureEngine : IDisposable
     private readonly NativeMethods.PacketCallback packetCallback;
     private readonly NativeMethods.LogCallback logCallback;
     private Exception? callbackError;
-    public string Description { get; private set; } = "Не запущен";
+    public string Description { get; private set; } = Text.Get("Capture.NotRunning");
     public event Action<EncodedPacket>? Packet;
     public event Action<int, string>? Log;
 
@@ -24,7 +25,7 @@ internal sealed class NativeCaptureEngine : IDisposable
 
     public void Start(StudioSettings settings, IntPtr window, IReadOnlyList<DeviceOption> devices)
     {
-        if (session != IntPtr.Zero) throw new InvalidOperationException("Буфер уже запущен.");
+        if (session != IntPtr.Zero) throw new InvalidOperationException(Text.Get("Capture.AlreadyRunning"));
         RuntimeAssets.EnsureLoaded();
         var config = BuildConfig(settings, window, devices);
         NativeMethods.Check(NativeMethods.hr_start(in config, packetCallback, logCallback, IntPtr.Zero, out session));
@@ -88,8 +89,32 @@ internal sealed class NativeCaptureEngine : IDisposable
         NativeMethods.Check(NativeMethods.hr_devices(callback, IntPtr.Zero));
         GC.KeepAlive(callback);
         if (error is not null) throw error;
+        return LocalizeMonitorNames(devices);
+    }
+
+    // The native layer reports monitors with a language-neutral fallback label; captions shown to people are built here.
+    private static List<DeviceOption> LocalizeMonitorNames(List<DeviceOption> devices)
+    {
+        int ordinal = 0;
+        for (int i = 0; i < devices.Count; ++i)
+        {
+            var device = devices[i];
+            if (device.Kind != 0) continue;
+            ++ordinal;
+            var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+            if (!GetMonitorInfo((IntPtr)(long)device.Handle, ref info)) continue;
+            var key = device.IsDefault ? "Device.MonitorPrimary" : "Device.Monitor";
+            devices[i] = device with
+            {
+                Name = Text.Format(key, ordinal, info.Monitor.Right - info.Monitor.Left, info.Monitor.Bottom - info.Monitor.Top)
+            };
+        }
         return devices;
     }
+
+    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct MonitorInfo { public int Size; public Rect Monitor, Work; public uint Flags; }
+    [DllImport("user32", EntryPoint = "GetMonitorInfoW")] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 
     public static void Probe(StudioSettings settings, IReadOnlyList<DeviceOption> devices)
     {
@@ -123,7 +148,7 @@ internal sealed class NativeCaptureEngine : IDisposable
         var selected = explicitMonitor
             ? devices.FirstOrDefault(d => d.Kind == 0 && d.Id == settings.Video.MonitorDevice)
             : devices.FirstOrDefault(d => d.Kind == 0 && d.IsDefault);
-        if (selected is null) throw new InvalidOperationException("Выбранный монитор отключён. Выберите доступный монитор в настройках.");
+        if (selected is null) throw new InvalidOperationException(Text.Get("Capture.MonitorDisconnected"));
         var (width, height) = settings.Video.Resolution switch
         {
             VideoResolution.FullHd => (1920, 1080), VideoResolution.Qhd => (2560, 1440),
@@ -146,7 +171,7 @@ internal sealed class NativeCaptureEngine : IDisposable
         try
         {
             if (callbackError is not null) return;
-            if (packet.Size <= 0 || packet.Size > 64 * 1024 * 1024) throw new InvalidDataException("Размер пакета энкодера недопустим.");
+            if (packet.Size <= 0 || packet.Size > 64 * 1024 * 1024) throw new InvalidDataException(Text.Get("Capture.InvalidPacketSize"));
             var payload = GC.AllocateUninitializedArray<byte>(packet.Size);
             Marshal.Copy(packet.Data, payload, 0, payload.Length);
             Packet?.Invoke(new(packet.Stream, payload, packet.PtsUs, packet.DtsUs, packet.DurationUs, packet.Keyframe != 0));
@@ -155,7 +180,7 @@ internal sealed class NativeCaptureEngine : IDisposable
         {
             if (Interlocked.CompareExchange(ref callbackError, ex, null) is null)
             {
-                try { Log?.Invoke(2, "Буфер пакетов остановлен: " + ex.Message); } catch { }
+                try { Log?.Invoke(2, Text.Format("Capture.PacketBufferStopped", ex.Message)); } catch { }
             }
         }
     }

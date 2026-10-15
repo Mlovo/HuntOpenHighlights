@@ -9,6 +9,15 @@ struct SwsDelete {
 };
 using Sws = std::unique_ptr<SwsContext, SwsDelete>;
 
+// Keeps DTS strictly increasing per output stream and PTS >= DTS, then interleaves the packet.
+static void write_monotonic(AVFormatContext* output, AVPacket* packet, std::vector<int64_t>& last_dts, const char* operation) {
+    auto& last = last_dts[packet->stream_index];
+    if (last != AV_NOPTS_VALUE && packet->dts <= last) packet->dts = last + 1;
+    if (packet->pts < packet->dts) packet->pts = packet->dts;
+    last = packet->dts;
+    avcheck(av_interleaved_write_frame(output, packet), operation);
+}
+
 struct TrimOutputGuard {
     AVFormatContext* format = nullptr;
     std::wstring path;
@@ -35,6 +44,9 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
     }
     if (_wcsicmp(source_path, target_path) == 0) {
         throw std::runtime_error("Destination path cannot be identical to source path.");
+    }
+    if (!std::isfinite(start_seconds) || !std::isfinite(end_seconds)) {
+        throw std::runtime_error("Trim boundaries must be finite.");
     }
     if (start_seconds < 0.0) start_seconds = 0.0;
     if (end_seconds <= start_seconds) {
@@ -295,16 +307,27 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
         }
         pkt->pos = -1;
         pkt->stream_index = out_stream_idx;
+        write_monotonic(output.format, pkt, last_dts, "Write remuxed audio packet");
+    };
 
-        if (last_dts[out_stream_idx] != AV_NOPTS_VALUE && pkt->dts <= last_dts[out_stream_idx]) {
-            pkt->dts = last_dts[out_stream_idx] + 1;
-        }
-        if (pkt->pts < pkt->dts) {
-            pkt->pts = pkt->dts;
-        }
-        last_dts[out_stream_idx] = pkt->dts;
+    auto report_progress = [&](int64_t rel_pts_us) {
+        if (!progress_cb || ++packet_counter % 10 != 0) return;
+        double prog = std::clamp(static_cast<double>(rel_pts_us) / 1'000'000.0 / trim_duration, 0.0, 0.99);
+        if (progress_cb(user, prog) != 0) throw std::runtime_error("Операция обрезки отменена пользователем.");
+    };
 
-        avcheck(av_interleaved_write_frame(output.format, pkt), "Write remuxed audio packet");
+    // Moves every packet the encoder has ready into the output. av_packet_rescale_ts converts duration too.
+    auto drain_encoder = [&](const char* operation, int64_t rel_pts_us) {
+        int out_v_idx = stream_map[video_idx];
+        AVStream* out_v_st = output.format->streams[out_v_idx];
+        while (avcodec_receive_packet(enc_ctx.get(), enc_pkt.get()) == 0) {
+            enc_pkt->stream_index = out_v_idx;
+            av_packet_rescale_ts(enc_pkt.get(), enc_ctx->time_base, out_v_st->time_base);
+            enc_pkt->pos = -1;
+            write_monotonic(output.format, enc_pkt.get(), last_dts, operation);
+            av_packet_unref(enc_pkt.get());
+            if (rel_pts_us >= 0) report_progress(rel_pts_us);
+        }
     };
 
     auto flush_audio_queue = [&]() {
@@ -319,25 +342,7 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
         if (!video_flushed && need_reencode && enc_ctx) {
             video_flushed = true;
             avcodec_send_frame(enc_ctx.get(), nullptr);
-            int out_v_idx = stream_map[video_idx];
-            AVStream* out_v_st = output.format->streams[out_v_idx];
-            while (avcodec_receive_packet(enc_ctx.get(), enc_pkt.get()) == 0) {
-                enc_pkt->stream_index = out_v_idx;
-                av_packet_rescale_ts(enc_pkt.get(), enc_ctx->time_base, out_v_st->time_base);
-                if (enc_pkt->duration > 0) {
-                    enc_pkt->duration = av_rescale_q(enc_pkt->duration, enc_ctx->time_base, out_v_st->time_base);
-                }
-                enc_pkt->pos = -1;
-                if (last_dts[out_v_idx] != AV_NOPTS_VALUE && enc_pkt->dts <= last_dts[out_v_idx]) {
-                    enc_pkt->dts = last_dts[out_v_idx] + 1;
-                }
-                if (enc_pkt->pts < enc_pkt->dts) {
-                    enc_pkt->pts = enc_pkt->dts;
-                }
-                last_dts[out_v_idx] = enc_pkt->dts;
-                avcheck(av_interleaved_write_frame(output.format, enc_pkt.get()), "Write flushed trim video packet");
-                av_packet_unref(enc_pkt.get());
-            }
+            drain_encoder("Write flushed trim video packet", -1);
         }
     };
 
@@ -399,36 +404,7 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
         }
 
         avcheck(avcodec_send_frame(enc_ctx.get(), frame_to_send), "Send frame to trim video encoder");
-
-        int out_v_idx = stream_map[video_idx];
-        AVStream* out_v_st = output.format->streams[out_v_idx];
-        while (avcodec_receive_packet(enc_ctx.get(), enc_pkt.get()) == 0) {
-            enc_pkt->stream_index = out_v_idx;
-            av_packet_rescale_ts(enc_pkt.get(), enc_ctx->time_base, out_v_st->time_base);
-            if (enc_pkt->duration > 0) {
-                enc_pkt->duration = av_rescale_q(enc_pkt->duration, enc_ctx->time_base, out_v_st->time_base);
-            }
-            enc_pkt->pos = -1;
-
-            if (last_dts[out_v_idx] != AV_NOPTS_VALUE && enc_pkt->dts <= last_dts[out_v_idx]) {
-                enc_pkt->dts = last_dts[out_v_idx] + 1;
-            }
-            if (enc_pkt->pts < enc_pkt->dts) {
-                enc_pkt->pts = enc_pkt->dts;
-            }
-            last_dts[out_v_idx] = enc_pkt->dts;
-
-            avcheck(av_interleaved_write_frame(output.format, enc_pkt.get()), "Write encoded trim video packet");
-            av_packet_unref(enc_pkt.get());
-
-            if (progress_cb && (++packet_counter % 10 == 0)) {
-                double current_sec = static_cast<double>(rel_pts_us) / 1'000'000.0;
-                double prog = std::clamp(current_sec / trim_duration, 0.0, 0.99);
-                if (progress_cb(user, prog) != 0) {
-                    throw std::runtime_error("Операция обрезки отменена пользователем.");
-                }
-            }
-        }
+        drain_encoder("Write encoded trim video packet", rel_pts_us);
     };
 
     while (av_read_frame(input.format, packet.get()) >= 0) {
@@ -575,25 +551,9 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
                 }
                 packet->pos = -1;
                 packet->stream_index = out_idx;
-
-                if (last_dts[out_idx] != AV_NOPTS_VALUE && packet->dts <= last_dts[out_idx]) {
-                    packet->dts = last_dts[out_idx] + 1;
-                }
-                if (packet->pts < packet->dts) {
-                    packet->pts = packet->dts;
-                }
-                last_dts[out_idx] = packet->dts;
-
-                avcheck(av_interleaved_write_frame(output.format, packet.get()), "Write remuxed trim packet");
+                write_monotonic(output.format, packet.get(), last_dts, "Write remuxed trim packet");
                 av_packet_unref(packet.get());
-
-                if (progress_cb && (++packet_counter % 10 == 0)) {
-                    double current_sec = static_cast<double>(rel_pts_us) / 1'000'000.0;
-                    double prog = std::clamp(current_sec / trim_duration, 0.0, 0.99);
-                    if (progress_cb(user, prog) != 0) {
-                        throw std::runtime_error("Операция обрезки отменена пользователем.");
-                    }
-                }
+                report_progress(rel_pts_us);
                 continue;
             }
         }

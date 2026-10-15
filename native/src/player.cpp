@@ -186,8 +186,21 @@ struct PlayerImpl {
 
     std::mutex frame_mutex;
     std::vector<uint8_t> frame_bgra;
+    std::vector<uint8_t> back_bgra; // Decode-thread scratch, swapped into frame_bgra under frame_mutex.
     double frame_pts = 0.0;
     bool has_new_frame = false;
+
+    // Scales outside the lock so the UI thread's read_frame never waits for a conversion.
+    void publish_frame(AVFrame* frame, double pts) {
+        if (back_bgra.size() != frame_bgra.size()) back_bgra.resize(frame_bgra.size());
+        uint8_t* dst_planes[1]{back_bgra.data()};
+        int dst_strides[1]{out_stride};
+        sws_scale(sws, frame->data, frame->linesize, 0, frame->height, dst_planes, dst_strides);
+        std::lock_guard<std::mutex> lock(frame_mutex);
+        frame_bgra.swap(back_bgra);
+        frame_pts = pts;
+        has_new_frame = true;
+    }
 
     std::thread worker;
     std::condition_variable cv;
@@ -253,14 +266,7 @@ struct PlayerImpl {
                         } else if (frame->pts != AV_NOPTS_VALUE) {
                             pts = frame->pts * av_q2d(tb);
                         }
-                        {
-                            std::lock_guard<std::mutex> lock(frame_mutex);
-                            uint8_t* dst_planes[1]{frame_bgra.data()};
-                            int dst_strides[1]{out_stride};
-                            sws_scale(sws, frame->data, frame->linesize, 0, frame->height, dst_planes, dst_strides);
-                            frame_pts = pts;
-                            has_new_frame = true;
-                        }
+                        publish_frame(frame.get(), pts);
                         current_pts_sec = pts;
                         if (target <= 0.05 || pts >= target - 0.05) {
                             av_packet_unref(packet.get());
@@ -327,14 +333,7 @@ struct PlayerImpl {
                             }
                         }
 
-                        {
-                            std::lock_guard<std::mutex> lock(frame_mutex);
-                            uint8_t* dst_planes[1]{frame_bgra.data()};
-                            int dst_strides[1]{out_stride};
-                            sws_scale(sws, frame->data, frame->linesize, 0, frame->height, dst_planes, dst_strides);
-                            frame_pts = pts;
-                            has_new_frame = true;
-                        }
+                        publish_frame(frame.get(), pts);
                         current_pts_sec = pts;
 
                         if (seek_requested || !playing || stop_worker) break;
@@ -442,13 +441,13 @@ void player_close(hr_player* ptr) {
     delete reinterpret_cast<PlayerImpl*>(ptr);
 }
 
+void player_seek(hr_player* ptr, double seconds);
+
 void player_play(hr_player* ptr) {
     if (!ptr) return;
     auto* player = reinterpret_cast<PlayerImpl*>(ptr);
-    if (player->ended) {
-        player->perform_seek(0.0);
-        player->ended = false;
-    }
+    // perform_seek shares the demuxer and decoders with the decode loop, so only the worker may run it.
+    if (player->ended) player_seek(ptr, 0.0);
     player->clock_start_qpc = qpc_100ns();
     player->clock_start_pts = player->current_pts_sec.load();
     player->playing = true;

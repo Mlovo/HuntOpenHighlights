@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using HuntReplay.App.Interop;
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Localization;
 using HuntReplay.Core.Media;
 using HuntReplay.Core.Replay;
 using HuntReplay.Core.Storage;
@@ -51,8 +52,21 @@ internal sealed class RecorderService : IAsyncDisposable
             {
                 var native = engine?.Stats ?? default;
                 return new(!stopping && native.Running != 0, buffer?.Status ?? default, native,
-                    engine?.Description ?? "Аппаратный энкодер не запущен", planner?.PendingCount ?? 0, Volatile.Read(ref exportCount));
+                    engine?.Description ?? Text.Get("Recorder.EncoderNotRunning"), planner?.PendingCount ?? 0, Volatile.Read(ref exportCount));
             }
+        }
+    }
+    /// <summary>
+    /// Applies a UI preference (language, theme) that needs no capture restart. The live settings object is replaced,
+    /// never mutated, so readers on other threads keep a consistent snapshot. Returns a copy to persist.
+    /// </summary>
+    public StudioSettings UpdatePreferences(Action<SystemSettings> change)
+    {
+        lock (state)
+        {
+            var next = settings.Clone(); change(next.System); next.Validate();
+            settings = next;
+            return next.Clone();
         }
     }
     public long NowUs { get { lock (state) return engine?.Stats.ElapsedUs ?? 0; } }
@@ -63,10 +77,10 @@ internal sealed class RecorderService : IAsyncDisposable
         await lifecycle.WaitAsync().ConfigureAwait(false);
         try
         {
-            lock (state) if (engine is not null) throw new InvalidOperationException("Сначала остановите текущую сессию захвата.");
+            lock (state) if (engine is not null) throw new InvalidOperationException(Text.Get("Recorder.StopFirst"));
             var value = Settings.Clone(); value.Validate();
             if (value.Video.Source == CaptureSource.HuntWindow && window == IntPtr.Zero)
-                throw new InvalidOperationException("Окно игры не найдено. Запустите Hunt или явно выберите захват монитора.");
+                throw new InvalidOperationException(Text.Get("Recorder.GameWindowMissing"));
             var bytesPerSecond = value.Video.BitrateMbps * 1_000_000L / 8 + 48_000;
             var reserveSeconds = value.Replay.BufferSeconds + value.Replay.MaxSequenceSeconds + value.Replay.CoalesceGapSeconds + 32;
             var physical = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
@@ -84,7 +98,7 @@ internal sealed class RecorderService : IAsyncDisposable
                 }
             }
             catch { capture.Dispose(); throw; }
-            log.Write($"RAM-буфер запущен · {value.Replay.BufferSeconds} с · лимит с учётом серий {limit / 1024 / 1024} МиБ");
+            log.Write(Text.Format("Log.BufferStarted", value.Replay.BufferSeconds, limit / 1024 / 1024));
             Changed?.Invoke();
         }
         finally { lifecycle.Release(); }
@@ -101,7 +115,7 @@ internal sealed class RecorderService : IAsyncDisposable
                 if (plan is null) return true;
                 if (pins.TryGetValue(plan.Id, out var pin)) buffer.UpdatePin(pin, plan.StartUs);
                 else pins[plan.Id] = buffer.Pin(plan.StartUs);
-                log.Write($"{evt.HighlightId} · {plan.EventTag} · постзапись до {plan.EndUs / 1_000_000d:F1} с", "EVENT");
+                log.Write(Text.Format("Log.HighlightPlanned", evt.HighlightId, plan.EventTag, plan.EndUs / 1_000_000d), "EVENT");
                 Changed?.Invoke();
                 return true;
             }
@@ -119,7 +133,7 @@ internal sealed class RecorderService : IAsyncDisposable
             lock (state)
             {
                 if (engine is null || buffer is null || stopping || engine.Stats.Running == 0)
-                    throw new InvalidOperationException("Сначала запустите буфер.");
+                    throw new InvalidOperationException(Text.Get("Recorder.StartFirst"));
                 end = buffer.Status.LatestUs;
                 manualPin = buffer.Pin(Math.Max(0, end - settings.Replay.BufferSeconds * 1_000_000L));
             }
@@ -133,7 +147,7 @@ internal sealed class RecorderService : IAsyncDisposable
                     StartUs = Math.Max(0, end - settings.Replay.BufferSeconds * 1_000_000L), EndUs = end
                 };
                 plan.Events.Add("MANUAL");
-                if (!QueuePlan(plan)) throw new InvalidOperationException("Буфер ещё пуст или очередь сохранений заполнена.");
+                if (!QueuePlan(plan)) throw new InvalidOperationException(Text.Get("Recorder.NothingToSave"));
             }
         }
         finally
@@ -171,7 +185,7 @@ internal sealed class RecorderService : IAsyncDisposable
         {
             capture.Dispose(); engine = null; buffer = null; planner = null; pins.Clear(); stopping = false;
         }
-        log.Write("Буфер остановлен. Сохранения завершены; несохранённая RAM освобождена.");
+        log.Write(Text.Get("Log.BufferStopped"));
         Changed?.Invoke();
     }
 
@@ -199,7 +213,7 @@ internal sealed class RecorderService : IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
-        catch (Exception ex) { log.Write("Планировщик записи: " + ex.Message, "ERROR"); }
+        catch (Exception ex) { log.Write(Text.Format("Log.SchedulerError", ex.Message), "ERROR"); }
     }
 
     private void FlushReady(bool force)
@@ -220,11 +234,11 @@ internal sealed class RecorderService : IAsyncDisposable
         if (engine is null || buffer is null) return false;
         if (Volatile.Read(ref exportCount) >= MaximumExportSnapshots)
         {
-            log.Write("Очередь MP4 заполнена; ручной клип не принят. Дождитесь предыдущего сохранения.", "WARN");
+            log.Write(Text.Get("Log.QueueFullManual"), "WARN");
             return false;
         }
         var snapshot = buffer.Snapshot(plan.StartUs, plan.EndUs);
-        if (snapshot is null) { log.Write("Нет ключевого кадра для " + plan.EventTag, "WARN"); return false; }
+        if (snapshot is null) { log.Write(Text.Format("Log.NoKeyframe", plan.EventTag), "WARN"); return false; }
         lock (exportGate)
         {
             if (exportCount == 0) exportsIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -233,7 +247,7 @@ internal sealed class RecorderService : IAsyncDisposable
             exportCount--;
             if (exportCount == 0) exportsIdle.TrySetResult();
         }
-        log.Write("Очередь MP4 заполнена; клип не принят. Дождитесь предыдущих сохранений.", "WARN");
+        log.Write(Text.Get("Log.QueueFull"), "WARN");
         return false;
     }
 
@@ -261,22 +275,22 @@ internal sealed class RecorderService : IAsyncDisposable
                     TruncatedEnd = job.Snapshot.TruncatedEnd
                 });
                 try { NativeCaptureEngine.SaveThumbnail(final, clip.ThumbnailPath); }
-                catch (Exception ex) { log.Write("Клип сохранён, но превью недоступно: " + ex.Message, "WARN"); }
-                log.Write($"Сохранён {clip.Metadata.FileName} · {clip.Metadata.DurationSeconds:F1} с · stream copy", "SAVED");
+                catch (Exception ex) { log.Write(Text.Format("Log.ThumbnailFailed", ex.Message), "WARN"); }
+                log.Write(Text.Format("Log.ClipSaved", clip.Metadata.FileName, clip.Metadata.DurationSeconds), "SAVED");
                 if (clip.Metadata.TruncatedStart || clip.Metadata.TruncatedEnd)
-                    log.Write("Клип короче запрошенного окна: буфер прогревался, память ограничена или игра уже закрылась.", "WARN");
+                    log.Write(Text.Get("Log.ClipTruncated"), "WARN");
                 var protectedIds = new HashSet<Guid> { clip.Metadata.Id };
                 lock (state) if (protectedClip is { } id) protectedIds.Add(id);
                 try
                 {
                     var removed = library.EnforceLimit(job.Settings.Storage, protectedIds);
-                    if (removed > 0) log.Write($"Автоочистка: удалено собственных клипов — {removed}.");
+                    if (removed > 0) log.Write(Text.Format("Log.AutoCleanup", removed));
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                { log.Write("Клип сохранён, но автоочистка не завершена: " + ex.Message, "WARN"); }
+                { log.Write(Text.Format("Log.AutoCleanupFailed", ex.Message), "WARN"); }
                 ClipSaved?.Invoke(clip);
             }
-            catch (Exception ex) { log.Write("Не удалось завершить сохранение MP4: " + ex.Message, "ERROR"); }
+            catch (Exception ex) { log.Write(Text.Format("Log.ExportFailed", ex.Message), "ERROR"); }
             finally
             {
                 if (temp is not null)

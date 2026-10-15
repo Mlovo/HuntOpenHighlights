@@ -56,16 +56,15 @@ require([f["name"] for f in synthetic["frames"]] == ["join", "create", "configur
 # Pin the allocation policy which is incompatible with NV12 render-target arrays in FFmpeg 8.1.
 video = (ROOT / "native/src/video.cpp").read_text(encoding="utf-8")
 require(re.search(r"fc->initial_pool_size\s*=\s*0\s*;", video), "NV12 capture must use standalone dynamic-pool GPU textures")
-# The application version must match wherever a user can see it. The native ABI (hr_abi_version) and the
-# CMake project version are deliberately not bumped by app releases unless the native contract changes.
-def version_in(path, pattern):
-    match = re.search(pattern, (ROOT / path).read_text(encoding="utf-8"))
-    return match.group(1) if match else None
-versions = {
-    "HuntReplay.App.csproj": version_in("src/HuntReplay.App/HuntReplay.App.csproj", r"<Version>([0-9.]+)</Version>"),
-    "MainWindow footer": version_in("src/HuntReplay.App/MainWindow.xaml", r"STUDIO\s+/\s+([0-9.]+)"),
-}
-require(all(versions.values()) and len(set(versions.values())) == 1, f"Version mismatch or missing: {versions}")
+# The application version has one source, <Version> in the App csproj; the footer binds it at runtime.
+# The native ABI (hr_abi_version) and the CMake project version are deliberately not bumped by app releases
+# unless the native contract changes.
+csproj_version = re.search(r"<Version>([0-9.]+)</Version>",
+                           (ROOT / "src/HuntReplay.App/HuntReplay.App.csproj").read_text(encoding="utf-8"))
+require(csproj_version is not None, "HuntReplay.App.csproj has no <Version>")
+footer = (ROOT / "src/HuntReplay.App/MainWindow.xaml").read_text(encoding="utf-8")
+require("{Binding AppVersion" in footer and not re.search(r"STUDIO\s+/\s+[0-9]", footer),
+        "MainWindow footer must bind AppVersion instead of a hard-coded version")
 if errors:
     raise SystemExit("\n".join(errors))
 print(f"PASS: XML, pinned payloads, {len(production)} production source files, {len(exports)} ABI exports, golden fixtures.")

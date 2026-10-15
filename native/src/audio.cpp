@@ -40,6 +40,9 @@ struct Endpoint {
     int64_t epoch;
     uint64_t expected_position = 0;
     std::wstring device_id;
+    // Reused by read() on every WASAPI packet (~10 ms) to keep the audio thread allocation-free in steady state.
+    std::vector<uint8_t> silence;
+    std::vector<float> unpacked, converted;
 
     Endpoint(IMMDeviceEnumerator* enumerator, const wchar_t* id, bool loopback, int64_t epoch_100ns) : epoch(epoch_100ns) {
         ComPtr<IMMDevice> device;
@@ -106,13 +109,11 @@ struct Endpoint {
                     avcheck(swr_set_compensation(resampler.get(), static_cast<int>(at - next_sample), rate), "Audio clock compensation");
                 }
                 expected_position = position + frames;
-                std::vector<uint8_t> silence;
                 if (flags & AUDCLNT_BUFFERFLAGS_SILENT) {
-                    silence.resize(static_cast<size_t>(frames) * format->nBlockAlign,
+                    silence.assign(static_cast<size_t>(frames) * format->nBlockAlign,
                         format->wBitsPerSample == 8 ? 128 : 0);
                     data = silence.data();
                 }
-                std::vector<float> unpacked;
                 if (packed24) {
                     unpacked.resize(static_cast<size_t>(frames) * format->nChannels);
                     for (size_t i = 0; i < unpacked.size(); ++i) {
@@ -125,7 +126,7 @@ struct Endpoint {
                 }
                 int capacity = static_cast<int>(av_rescale_rnd(swr_get_delay(resampler.get(), format->nSamplesPerSec) + frames,
                     rate, format->nSamplesPerSec, AV_ROUND_UP)) + 256;
-                std::vector<float> converted(static_cast<size_t>(capacity) * 2);
+                converted.resize(static_cast<size_t>(capacity) * 2);
                 uint8_t* target = reinterpret_cast<uint8_t*>(converted.data());
                 const uint8_t* source = data;
                 int count = swr_convert(resampler.get(), &target, capacity, &source, frames);

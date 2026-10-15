@@ -93,10 +93,10 @@
 
                     <TextBlock x:Name="PositionText" Grid.Column="3" Text="00:00 / 00:00" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/>
 
-                    <Button x:Name="TrimButton" Grid.Column="4" Margin="12,0,0,0" Click="TrimButtonClick" IsEnabled="False" Padding="10,5" MinHeight="30" FontSize="11">
+                    <Button x:Name="TrimButton" ToolTip="{Binding Loc[Gallery.TrimTooltip]}" Grid.Column="4" Margin="12,0,0,0" Click="TrimButtonClick" IsEnabled="False" Padding="10,5" MinHeight="30" FontSize="11">
                       <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7A8;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBlock x:Name="TrimButtonText" Text="Обрезать видео" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="TrimButtonText" Text="{Binding Loc[Gallery.TrimVideo]}" VerticalAlignment="Center"/>
                       </StackPanel>
                     </Button>
                   </Grid>
@@ -117,37 +117,37 @@
 
                         <!-- Group 0: Start Boundary Controls -->
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                          <TextBlock x:Name="TrimStartLabel" Text="Начало:" Style="{DynamicResource Eyebrow}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                          <TextBlock x:Name="TrimStartLabel" Text="{Binding Loc[Gallery.TrimStart]}" Style="{DynamicResource Eyebrow}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                           <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="4" Padding="6,3" Margin="0,0,6,0">
                             <TextBlock x:Name="TrimStartText" Text="00:00" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
                           </Border>
                           <Button x:Name="StepStartMinusButton" Content="-0.1s" Click="StepStartMinusClick" ToolTip="-0.1 s" Padding="5,3" MinHeight="26" FontSize="10" Margin="0,0,3,0"/>
                           <Button x:Name="StepStartPlusButton" Content="+0.1s" Click="StepStartPlusClick" ToolTip="+0.1 s" Padding="5,3" MinHeight="26" FontSize="10" Margin="0,0,8,0"/>
-                          <Button x:Name="JumpStartButton" Click="JumpStartClick" ToolTip="Перейти к началу фрагмента [Home]" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,4,0">
+                          <Button x:Name="JumpStartButton" Click="JumpStartClick" ToolTip="{Binding Loc[Gallery.JumpStartTooltip]}" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,4,0">
                             <StackPanel Orientation="Horizontal">
                               <TextBlock Text="&#xE892;" FontFamily="Segoe MDL2 Assets" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                              <TextBlock x:Name="JumpStartText" Text="К началу" VerticalAlignment="Center"/>
+                              <TextBlock x:Name="JumpStartText" Text="{Binding Loc[Gallery.JumpStart]}" VerticalAlignment="Center"/>
                             </StackPanel>
                           </Button>
-                          <Button x:Name="MarkInButton" Click="MarkInClick" ToolTip="Установить начало по текущему кадру [I]" Padding="8,3" MinHeight="26" FontSize="11">
+                          <Button x:Name="MarkInButton" Click="MarkInClick" ToolTip="{Binding Loc[Gallery.MarkInTooltip]}" Padding="8,3" MinHeight="26" FontSize="11">
                             <StackPanel Orientation="Horizontal">
                               <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                              <TextBlock x:Name="MarkInText" Text="Задать начало" VerticalAlignment="Center"/>
+                              <TextBlock x:Name="MarkInText" Text="{Binding Loc[Gallery.MarkIn]}" VerticalAlignment="Center"/>
                             </StackPanel>
                           </Button>
                         </StackPanel>
 
                         <!-- Group 2: End Boundary Controls -->
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                          <Button x:Name="MarkOutButton" Click="MarkOutClick" ToolTip="Установить конец по текущему кадру [O]" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,4,0">
+                          <Button x:Name="MarkOutButton" Click="MarkOutClick" ToolTip="{Binding Loc[Gallery.MarkOutTooltip]}" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,4,0">
                             <StackPanel Orientation="Horizontal">
                               <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                              <TextBlock x:Name="MarkOutText" Text="Задать конец" VerticalAlignment="Center"/>
+                              <TextBlock x:Name="MarkOutText" Text="{Binding Loc[Gallery.MarkOut]}" VerticalAlignment="Center"/>
                             </StackPanel>
                           </Button>
-                          <Button x:Name="JumpEndButton" Click="JumpEndClick" ToolTip="Перейти к концу фрагмента [End]" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,8,0">
+                          <Button x:Name="JumpEndButton" Click="JumpEndClick" ToolTip="{Binding Loc[Gallery.JumpEndTooltip]}" Padding="8,3" MinHeight="26" FontSize="11" Margin="0,0,8,0">
                             <StackPanel Orientation="Horizontal">
-                              <TextBlock x:Name="JumpEndText" Text="К концу" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                              <TextBlock x:Name="JumpEndText" Text="{Binding Loc[Gallery.JumpEnd]}" VerticalAlignment="Center" Margin="0,0,5,0"/>
                               <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="10" VerticalAlignment="Center"/>
                             </StackPanel>
                           </Button>
@@ -156,7 +156,7 @@
                           <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="4" Padding="6,3" Margin="0,0,6,0">
                             <TextBlock x:Name="TrimEndText" Text="00:00" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
                           </Border>
-                          <TextBlock x:Name="TrimEndLabel" Text="Конец:" Style="{DynamicResource Eyebrow}" VerticalAlignment="Center"/>
+                          <TextBlock x:Name="TrimEndLabel" Text="{Binding Loc[Gallery.TrimEnd]}" Style="{DynamicResource Eyebrow}" VerticalAlignment="Center"/>
                         </StackPanel>
                       </Grid>
 
@@ -173,15 +173,15 @@
 
                         <!-- Preview & Duration Badge -->
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                          <Button x:Name="PreviewRangeButton" Click="PreviewRangeClick" ToolTip="Предпросмотр фрагмента [Space]" Padding="10,4" MinHeight="28" FontSize="11" Margin="0,0,10,0">
+                          <Button x:Name="PreviewRangeButton" Click="PreviewRangeClick" ToolTip="{Binding Loc[Gallery.PreviewTooltip]}" Padding="10,4" MinHeight="28" FontSize="11" Margin="0,0,10,0">
                             <StackPanel Orientation="Horizontal">
                               <TextBlock x:Name="PreviewRangeIcon" Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                              <TextBlock x:Name="PreviewRangeText" Text="Предпросмотр" VerticalAlignment="Center"/>
+                              <TextBlock x:Name="PreviewRangeText" VerticalAlignment="Center"/>
                             </StackPanel>
                           </Button>
                           <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="4" Padding="8,3">
                             <StackPanel Orientation="Horizontal">
-                              <TextBlock x:Name="TrimDurationLabel" Text="Длительность:" FontSize="10" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                              <TextBlock x:Name="TrimDurationLabel" Text="{Binding Loc[Gallery.TrimDuration]}" FontSize="10" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                               <TextBlock x:Name="TrimDurationText" Text="00:00" FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
                             </StackPanel>
                           </Border>
@@ -189,8 +189,8 @@
 
                         <!-- Save & Cancel Actions -->
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                          <Button x:Name="SaveFragmentButton" Content="Сохранить фрагмент" Style="{DynamicResource PrimaryButton}" Click="SaveFragmentClick" Padding="14,5" MinHeight="28" FontSize="11" Margin="0,0,8,0"/>
-                          <Button x:Name="CancelTrimButton" Content="Отмена" Style="{DynamicResource QuietButton}" Click="CancelTrimClick" Padding="12,5" MinHeight="28" FontSize="11"/>
+                          <Button x:Name="SaveFragmentButton" Content="{Binding Loc[Gallery.SaveFragment]}" Style="{DynamicResource PrimaryButton}" Click="SaveFragmentClick" Padding="14,5" MinHeight="28" FontSize="11" Margin="0,0,8,0"/>
+                          <Button x:Name="CancelTrimButton" Content="{Binding Loc[Common.Cancel]}" Style="{DynamicResource QuietButton}" Click="CancelTrimClick" Padding="12,5" MinHeight="28" FontSize="11"/>
                         </StackPanel>
                       </Grid>
 
@@ -202,10 +202,10 @@
                           <ColumnDefinition Width="Auto"/>
                           <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="TrimProgressStatus" Text="Сохранение фрагмента…" Foreground="{DynamicResource Accent}" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBlock x:Name="TrimProgressStatus" Foreground="{DynamicResource Accent}" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
                         <ProgressBar x:Name="TrimProgressBar" Grid.Column="1" Height="6" Minimum="0" Maximum="100" VerticalAlignment="Center" Margin="0,0,12,0"/>
                         <TextBlock x:Name="TrimProgressPercent" Grid.Column="2" Text="0%" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource Text}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                        <Button x:Name="CancelExportButton" Grid.Column="3" Content="Отмена" Click="CancelExportClick" Padding="10,3" MinHeight="24" FontSize="10"/>
+                        <Button x:Name="CancelExportButton" Grid.Column="3" Click="CancelExportClick" Padding="10,3" MinHeight="24" FontSize="10"/>
                       </Grid>
                     </StackPanel>
                   </Border>
@@ -255,7 +255,7 @@
             </Grid.ColumnDefinitions>
             <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" Foreground="{DynamicResource Muted}" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
             <Grid Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
-              <TextBox x:Name="SearchBox" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" FontSize="12" Foreground="{DynamicResource Text}" CaretBrush="{DynamicResource Accent}" AutomationProperties.Name="Поиск клипов"/>
+              <TextBox x:Name="SearchBox" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" FontSize="12" Foreground="{DynamicResource Text}" CaretBrush="{DynamicResource Accent}" AutomationProperties.Name="{Binding Loc[Gallery.SearchName]}"/>
               <TextBlock Text="{Binding Loc[Gallery.SearchPlaceholder]}" Foreground="{DynamicResource Muted}" FontSize="12" VerticalAlignment="Center" Margin="2,0,0,0" IsHitTestVisible="False">
                 <TextBlock.Style>
                   <Style TargetType="TextBlock">

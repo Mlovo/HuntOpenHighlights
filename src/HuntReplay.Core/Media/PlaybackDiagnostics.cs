@@ -1,3 +1,5 @@
+using HuntReplay.Core.Localization;
+
 namespace HuntReplay.Core.Media;
 
 /// <summary>
@@ -19,18 +21,14 @@ public static class PlaybackDiagnostics
     {
         var code = Code(hresult);
         if (hresult == FileOpenFailed)
-            return "Встроенный проигрыватель не смог открыть этот MP4 (код " + code + ", общая ошибка открытия файла). " +
-                "Код не называет конкретную причину: это может быть видеокодек (например, AV1 или HEVC без декодера Windows), " +
-                "повреждённый файл или проблема проигрывателя. Клип сохранён и не изменён. " +
-                "Откройте его кнопкой «Открыть в проигрывателе» или для новых клипов выберите H.264 в настройках видео.";
-        var detail = hresult == 0 ? "" : " (код " + code + ")";
-        return "Встроенный проигрыватель не смог открыть этот MP4" + detail + ". " +
-            "Клип сохранён и не изменён; для проверки откройте его кнопкой «Открыть в проигрывателе».";
+            return Text.Format("Playback.OpenFailedGeneric", code);
+        var detail = hresult == 0 ? "" : Text.Format("Playback.CodeSuffix", code);
+        return Text.Format("Playback.OpenFailed", detail);
     }
 
     public static string LogLine(int hresult, string fileName)
     {
         var symbol = SymbolName(hresult);
-        return "Предпросмотр не открыл клип " + fileName + " · код " + Code(hresult) + (symbol is null ? "" : " · " + symbol);
+        return Text.Format("Playback.LogLine", fileName, Code(hresult)) + (symbol is null ? "" : " · " + symbol);
     }
 }

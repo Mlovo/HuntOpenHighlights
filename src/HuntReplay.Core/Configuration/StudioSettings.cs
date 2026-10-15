@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.Core.Configuration;
 
@@ -39,37 +40,38 @@ public sealed class StudioSettings
 
     public void Validate()
     {
-        if (SchemaVersion != 1) throw new InvalidDataException("Неподдерживаемая версия config.json.");
+        if (SchemaVersion != 1) throw new InvalidDataException(Text.Get("Settings.UnsupportedSchema"));
         if (Video is null || Audio is null || Replay is null || Storage is null || System is null)
-            throw new InvalidDataException("В config.json отсутствует раздел настроек.");
+            throw new InvalidDataException(Text.Get("Settings.MissingSection"));
         Require(Enum.IsDefined(Video.Source) && Enum.IsDefined(Video.Encoder) &&
-                Enum.IsDefined(Video.Codec) && Enum.IsDefined(Video.Resolution), "Неизвестный видеорежим.");
-        Require(Video.Fps is 30 or 60 or 120, "FPS: 30, 60 или 120.");
-        Require(Video.BitrateMbps is >= 10 and <= 80, "Битрейт: 10–80 Мбит/с.");
-        Require(Video.GopSeconds is 1 or 2, "GOP: 1 или 2 секунды.");
+                Enum.IsDefined(Video.Codec) && Enum.IsDefined(Video.Resolution), "Settings.UnknownVideoMode");
+        Require(Video.Fps is 30 or 60 or 120, "Settings.FpsRange");
+        Require(Video.BitrateMbps is >= 10 and <= 80, "Settings.BitrateRange");
+        Require(Video.GopSeconds is 1 or 2, "Settings.GopRange");
         Require(Video.Encoder != VideoEncoder.X264 || Video.Codec == VideoCodec.H264,
-            "CPU x264 поддерживает только H.264. Программный fallback никогда не включается скрыто.");
-        Require(Video.MonitorDevice is not null, "Не указан монитор.");
-        Require(Video.GpuDevice is not null, "Не указана видеокарта.");
-        Require(Enum.IsDefined(Audio.Mode), "Неизвестный аудиорежим.");
-        Require(Audio.MicrophoneVolume is >= 0 and <= 100, "Громкость микрофона: 0–100%.");
-        Require(Audio.OutputDeviceId is not null && Audio.MicrophoneDeviceId is not null, "Не указаны аудиоустройства.");
-        Require(Replay.BufferSeconds is >= 15 and <= 300, "Буфер: 15–300 секунд.");
+            "Settings.X264H264Only");
+        Require(Video.MonitorDevice is not null, "Settings.MonitorMissing");
+        Require(Video.GpuDevice is not null, "Settings.GpuMissing");
+        Require(Enum.IsDefined(Audio.Mode), "Settings.UnknownAudioMode");
+        Require(Audio.MicrophoneVolume is >= 0 and <= 100, "Settings.MicVolumeRange");
+        Require(Audio.OutputDeviceId is not null && Audio.MicrophoneDeviceId is not null, "Settings.AudioDevicesMissing");
+        Require(Replay.BufferSeconds is >= 15 and <= 300, "Settings.BufferRange");
         Require(double.IsFinite(Replay.PostEventSeconds) && Replay.PostEventSeconds is >= 0 and <= 30,
-            "Постзапись: 0–30 секунд.");
-        Require(Replay.CoalesceGapSeconds is >= 1 and <= 30, "Окно объединения: 1–30 секунд.");
-        Require(Replay.MaxSequenceSeconds is >= 15 and <= 120, "Максимальная серия: 15–120 секунд.");
-        Require(Replay.PreEventSeconds is >= 1 and <= 300, "Предзапись: 1–300 секунд.");
+            "Settings.PostRollRange");
+        Require(Replay.CoalesceGapSeconds is >= 1 and <= 30, "Settings.CoalesceRange");
+        Require(Replay.MaxSequenceSeconds is >= 15 and <= 120, "Settings.SequenceRange");
+        Require(Replay.PreEventSeconds is >= 1 and <= 300, "Settings.PreRollRange");
         Require(!string.IsNullOrWhiteSpace(Storage.Directory) && Path.IsPathFullyQualified(Storage.Directory),
-            "Для клипов нужен абсолютный путь.");
-        Require(Storage.LimitGb is 0 or 15 or 30 or 60, "Лимит диска: 15, 30, 60 ГБ или без ограничений.");
+            "Settings.StorageAbsolute");
+        Require(Storage.LimitGb is 0 or 15 or 30 or 60, "Settings.DiskLimitRange");
         ClipFileName.ValidateTemplate(Storage.FileNameTemplate);
-        Require(System.HotkeyVirtualKey is >= 0x70 and <= 0x7B, "Для ручного сохранения доступны F1–F12.");
+        Require(System.HotkeyVirtualKey is >= 0x70 and <= 0x7B, "Settings.HotkeyRange");
     }
 
-    private static void Require(bool condition, string message)
+    // Validation messages are catalog keys, resolved in the current UI language when a rule fails.
+    private static void Require(bool condition, string messageKey)
     {
-        if (!condition) throw new InvalidDataException(message);
+        if (!condition) throw new InvalidDataException(Text.Get(messageKey));
     }
 }
 

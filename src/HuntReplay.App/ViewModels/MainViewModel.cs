@@ -9,6 +9,7 @@ using HuntReplay.App.Interop;
 using HuntReplay.App.Services;
 using HuntReplay.App.Views;
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Localization;
 using HuntReplay.Core.Media;
 using HuntReplay.Core.Storage;
 using Microsoft.Win32;
@@ -24,12 +25,18 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly StudioLog log;
     private readonly bool portable;
     private readonly string libraryRoot;
+    // The store App chose for this run (portable or %LocalAppData%); views must not recompute it.
+    public string LibraryRoot => libraryRoot;
+    // Single source of truth: <Version> in HuntReplay.App.csproj.
+    public string AppVersion { get; } = UpdateCheckerService.GetCurrentVersionString();
     private readonly CancellationTokenSource stop = new();
     private readonly SemaphoreSlim operation = new(1, 1);
     private Task? watcher;
     private HotkeyService? hotkey;
     private bool userPaused, manuallyStarted;
     private IntPtr lastGameWindow;
+    // Refreshed by the background game probe; reading it never enumerates processes on the UI thread.
+    private volatile bool nvidiaActive;
     private int retryCount;
     private long nextRetry;
     private StudioSettings settingsEdit;
@@ -54,8 +61,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public int ClipCount => Clips.Count;
     public LocalizationService Loc => LocalizationService.Instance;
     public ThemeService ThemeSvc => ThemeService.Instance;
-    public string LanguageButtonLabel => Loc.IsRussian ? "RU  /  EN" : "EN  /  RU";
-    public string ThemeButtonLabel => ThemeSvc.IsDark ? (Loc.IsRussian ? "🌙 ТЁМНАЯ" : "🌙 DARK") : (Loc.IsRussian ? "☀️ СВЕТЛАЯ" : "☀️ LIGHT");
+    public string LanguageButtonLabel => Loc["Header.LanguageToggle"];
+    public string ThemeButtonLabel => Loc[ThemeSvc.IsDark ? "Header.ThemeDark" : "Header.ThemeLight"];
     public string Page
     {
         get => page;
@@ -164,15 +171,15 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string ManualLabel => string.Format(Loc["Dash.SaveManual"], recorder.Settings.Replay.BufferSeconds);
     public string HotkeyLabel => "F" + (recorder.Settings.System.HotkeyVirtualKey - 0x6F);
     public string SetupLabel => setupReady ? Loc["Header.SetupReady"] : Loc["Header.SetupNeeded"];
-    public string PipeLabel => pipe.IsListening ? "IPC • ONLINE" : SelfInstaller.IsNvidiaActive() ? "IPC • NVIDIA " + (Loc.IsEnglish ? "ACTIVE" : "АКТИВЕН") : "IPC • OFFLINE";
+    public string PipeLabel => pipe.IsListening ? "IPC • ONLINE" : nvidiaActive ? Loc["Header.PipeNvidiaActive"] : "IPC • OFFLINE";
     public string LibrarySummary => string.Format(Loc["Gallery.Summary"], Clips.Count, Clips.Sum(c => c.Clip.Metadata.Bytes) / 1_000_000_000d);
     public bool CloseToTray => recorder.Settings.System.CloseToTray;
     public bool HasUpdate => hasUpdate;
     public bool IsCheckingUpdate => isCheckingUpdate;
     public string? LatestVersion => latestVersion;
     public string UpdateButtonLabel => string.IsNullOrWhiteSpace(latestVersion) ? Loc["Header.UpdateAvailable"] : string.Format(Loc["Header.UpdateAvailableVersion"], latestVersion);
-    public string UpdateStatusLabel => isCheckingUpdate ? (Loc.IsEnglish ? "Checking for updates…" : "Проверка обновлений…") :
-        hasUpdate ? (Loc.IsEnglish ? $"Version {latestVersion} is available" : $"Доступна версия {latestVersion}") : (Loc.IsEnglish ? "Latest version installed" : "Установлена последняя версия");
+    public string UpdateStatusLabel => isCheckingUpdate ? Loc["Update.Checking"] :
+        hasUpdate ? Loc.Format("Update.VersionAvailable", latestVersion) : Loc["Update.UpToDate"];
     public ICommand ToggleBufferCommand { get; }
     public ICommand SaveCommand { get; }
     public ICommand ApplySettingsCommand { get; }
@@ -240,26 +247,25 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void RebuildChoices()
     {
-        bool en = Loc.IsEnglish;
-        sources[0].Label = en ? "Hunt / Connected Game Window" : "Окно Hunt / подключённой игры";
-        sources[1].Label = en ? "Selected Monitor (Entire Screen)" : "Выбранный монитор (весь экран)";
+        sources[0].Label = Loc["Choice.SourceHuntWindow"];
+        sources[1].Label = Loc["Choice.SourceMonitor"];
 
-        resolutions[0].Label = en ? "Auto · Native Resolution" : "Авто · исходное разрешение";
+        resolutions[0].Label = Loc["Choice.ResolutionNative"];
 
-        encoders[0].Label = en ? "Auto · GPU of captured monitor" : "Авто · GPU захватываемого монитора";
-        encoders[4].Label = en ? "CPU x264 · H.264 only" : "CPU x264 · только H.264";
+        encoders[0].Label = Loc["Choice.EncoderAuto"];
+        encoders[4].Label = Loc["Choice.EncoderX264"];
 
-        codecs[0].Label = en ? "H.264 / AVC · Maximum Compatibility" : "H.264 / AVC · совместимость";
-        codecs[1].Label = en ? "H.265 / HEVC · Requires GPU Support" : "H.265 / HEVC · требуется поддержка GPU";
-        codecs[2].Label = en ? "AV1 · Requires GPU Support" : "AV1 · требуется поддержка GPU";
+        codecs[0].Label = Loc["Choice.CodecH264"];
+        codecs[1].Label = Loc["Choice.CodecHevc"];
+        codecs[2].Label = Loc["Choice.CodecAv1"];
 
-        audioModes[0].Label = en ? "Single stereo track · Game + Mic" : "Один стереотрек · игра + микрофон";
-        audioModes[1].Label = en ? "Two separate tracks · Game / Mic" : "Две дорожки · игра / микрофон";
+        audioModes[0].Label = Loc["Choice.AudioMixed"];
+        audioModes[1].Label = Loc["Choice.AudioSeparate"];
 
-        diskLimits[0].Label = en ? "15 GB" : "15 ГБ";
-        diskLimits[1].Label = en ? "30 GB" : "30 ГБ";
-        diskLimits[2].Label = en ? "60 GB" : "60 ГБ";
-        diskLimits[3].Label = en ? "Unlimited" : "Без ограничений";
+        diskLimits[0].Label = Loc.Format("Choice.DiskLimitGb", 15);
+        diskLimits[1].Label = Loc.Format("Choice.DiskLimitGb", 30);
+        diskLimits[2].Label = Loc.Format("Choice.DiskLimitGb", 60);
+        diskLimits[3].Label = Loc["Choice.DiskUnlimited"];
     }
 
     public MainViewModel(SettingsStore store, RecorderService recorder, HighlightsPipeServer pipe, StudioLog log, bool portable, string libraryRoot)
@@ -270,15 +276,15 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         settingsEdit = recorder.Settings.Clone();
         MonitorSelection = new(0,
             () => Loc["Choice.MonitorDefault"],
-            () => Loc.IsEnglish ? "Unavailable · saved monitor is not connected" : "Недоступно · сохранённый монитор не подключён",
+            () => Loc["Choice.MonitorUnavailable"],
             () => SettingsEdit.Video.MonitorDevice, value => SettingsEdit.Video.MonitorDevice = value);
         OutputSelection = new(1,
             () => Loc["Choice.OutputDefault"],
-            () => Loc.IsEnglish ? "Unavailable · saved device is not connected" : "Недоступно · сохранённое устройство не подключено",
+            () => Loc["Choice.AudioUnavailable"],
             () => SettingsEdit.Audio.OutputDeviceId, value => SettingsEdit.Audio.OutputDeviceId = value);
         MicrophoneSelection = new(2,
             () => Loc["Choice.MicDefault"],
-            () => Loc.IsEnglish ? "Unavailable · saved device is not connected" : "Недоступно · сохранённое устройство не подключено",
+            () => Loc["Choice.AudioUnavailable"],
             () => SettingsEdit.Audio.MicrophoneDeviceId, value => SettingsEdit.Audio.MicrophoneDeviceId = value);
         GpuSelection = new(3,
             () => Loc["Choice.GpuDefault"],
@@ -383,15 +389,19 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         {
             while (await tick.WaitForNextTickAsync(stop.Token).ConfigureAwait(false))
             {
+                // Process snapshots enumerate every process on the machine; probe on the thread pool, not the UI thread.
+                int probePid = (int)pipe.Games.FirstOrDefault().Pid;
+                var probedWindow = GameWindow.Find(probePid);
+                bool probedRunning = probedWindow != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(probePid);
+                nvidiaActive = !pipe.IsListening && SelfInstaller.IsNvidiaActive();
                 // All automation state and user operations are serialized on the UI dispatcher.
                 await dispatcher.InvokeAsync(async () =>
                 {
                     if (stop.IsCancellationRequested || Busy || !await operation.WaitAsync(0)) return;
                     try
                     {
-                        int pid = (int)pipe.Games.FirstOrDefault().Pid;
-                        var window = GameWindow.Find(pid);
-                        bool gameRunning = window != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(pid);
+                        var window = probedWindow;
+                        bool gameRunning = probedRunning;
 
                         if (window != lastGameWindow) { userPaused = false; retryCount = 0; nextRetry = 0; }
                         var previous = lastGameWindow; lastGameWindow = window;
@@ -441,9 +451,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
                             finally { Busy = false; }
                         }
                         if (retryCount >= 3 && wanted && !recorder.Status.Running)
-                            Message = Loc.IsEnglish
-                                ? "Auto-retry stopped after 3 errors. Check diagnostics and click 'Start Buffer'."
-                                : "Автоповтор остановлен после трёх ошибок. Проверьте диагностику и нажмите «Запустить буфер».";
+                            Message = Loc["Status.AutoRetryStopped"];
                         RefreshStatus();
                     }
                     catch (Exception ex) { Error(ex); }
@@ -478,7 +486,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task ApplyAsync()
     {
         if (Application.Current.MainWindow is { } root && HasFormErrors(root, new HashSet<DependencyObject>()))
-            throw new InvalidDataException(Loc.IsEnglish ? "Please correct invalid numeric fields before saving settings." : "Исправьте поля с некорректными числами перед сохранением настроек.");
+            throw new InvalidDataException(Loc["Settings.InvalidFields"]);
         var updated = SettingsEdit.Clone(); updated.Validate();
         await operation.WaitAsync(); Busy = true;
         var old = recorder.Settings.Clone();
@@ -494,7 +502,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             SettingsEdit = updated.Clone();
             await ReloadDevicesAsync();
             await RefreshClipsAsync();
-            Message = Loc.IsEnglish ? "Settings saved to config.json." : "Настройки сохранены в config.json.";
+            Message = Loc["Settings.Saved"];
             retryCount = 0; nextRetry = 0; userPaused = false;
             int pid = (int)pipe.Games.FirstOrDefault().Pid;
             bool gameActive = GameWindow.Find(pid) != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(pid);
@@ -503,9 +511,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 await StartCurrentAsync();
             }
-            log.Write(shouldRun
-                ? "Настройки применены. Буфер перезапущен с новым форматом."
-                : "Настройки применены. Буфер не запущен; ожидание игры или ручного запуска.");
+            log.Write(Loc[shouldRun ? "Log.SettingsAppliedRestarted" : "Log.SettingsAppliedIdle"]);
         }
         catch
         {
@@ -546,10 +552,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 // Moves 0.1.2 sidecars out of the clips folder and tidies records of deleted MP4 files.
                 var report = library.Maintain();
                 if (report.Adopted + report.Relocated + report.Pruned > 0)
-                    log.Write($"Библиотека клипов: перенесено из папки клипов {report.Adopted}, перепривязано после переименования папки {report.Relocated}, удалено служебных записей {report.Pruned}.");
+                    log.Write(Loc.Format("Log.LibraryMaintained", report.Adopted, report.Relocated, report.Pruned));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            { log.Write("Библиотека клипов: обслуживание пропущено: " + ex.Message, "WARN"); }
+            { log.Write(Loc.Format("Log.LibraryMaintenanceSkipped", ex.Message), "WARN"); }
             return library.List().Take(500).Select(c => new ClipViewModel(c)).ToArray();
         });
         Clips.Clear(); foreach (var clip in result) Clips.Add(clip);
@@ -558,14 +564,14 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     }
     private void Browse()
     {
-        var dialog = new OpenFolderDialog { Title = Loc.IsEnglish ? "Clips folder" : "Папка для хайлайтов", InitialDirectory = SettingsEdit.Storage.Directory };
+        var dialog = new OpenFolderDialog { Title = Loc["Dialog.ClipsFolder"], InitialDirectory = SettingsEdit.Storage.Directory };
         if (dialog.ShowDialog() == true) { SettingsEdit.Storage.Directory = dialog.FolderName; SettingsEdit = SettingsEdit.Clone(); }
     }
     private void DeleteClip()
     {
         if (SelectedClip is not { } clip || MessageBox.Show(
-            (Loc.IsEnglish ? "Permanently delete this clip?\n\n" : "Удалить клип без возможности восстановления?\n\n") + clip.FileName,
-            Loc.IsEnglish ? "Delete highlight" : "Удаление хайлайта", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            Loc.Format("Dialog.DeleteClipQuestion", clip.FileName),
+            Loc["Dialog.DeleteClipTitle"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         ClosePlayer?.Invoke();
         Library().Delete(clip.Clip);
         Clips.Remove(clip); SelectedClip = null;
@@ -574,7 +580,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private void RenameClip()
     {
         if (SelectedClip is not { } clip) return;
-        var dialog = new InputDialog(Loc.IsEnglish ? "Rename clip" : "Переименовать клип", clip.FileName) { Owner = Application.Current.MainWindow };
+        var dialog = new InputDialog(Loc["Dialog.RenameClip"], clip.FileName) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true) return;
         ClosePlayer?.Invoke();
         var renamed = Library().Rename(clip.Clip, dialog.Value);
@@ -584,13 +590,13 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task DiagnoseAsync()
     {
         await operation.WaitAsync(); Busy = true; Page = "Diagnostics";
-        try { Diagnostics = Loc.IsEnglish ? "Testing encoder. This may take a few seconds…" : "Проверяется реальный энкодер. Это может занять несколько секунд…";
+        try { Diagnostics = Loc["Diag.Testing"];
             Diagnostics = await Task.Run(() => DiagnosticsService.Run(recorder.Settings.Clone(), recorder, pipe)); }
         finally { Busy = false; operation.Release(); }
     }
     private void SaveReport()
     {
-        var dialog = new SaveFileDialog { FileName = "HuntReplay-diagnostics.txt", Filter = (Loc.IsEnglish ? "Text report" : "Текстовый отчёт") + "|*.txt" };
+        var dialog = new SaveFileDialog { FileName = "HuntReplay-diagnostics.txt", Filter = Loc["Dialog.TextReportFilter"] };
         if (dialog.ShowDialog() == true) File.WriteAllText(dialog.FileName, Diagnostics);
     }
     private async Task InstallAsync()
@@ -611,10 +617,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             if (MessageBox.Show(
-                Loc.IsEnglish ? "Restore registry values to pre-Studio state? Automatic Highlights will stop working. Saved clips will remain." : "Восстановить значения реестра до установки Studio? Автоматические Highlights перестанут поступать. Клипы останутся.",
-                Loc.IsEnglish ? "Restore NVIDIA" : "Восстановление NVIDIA", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                Loc["Dialog.RestoreNvidiaQuestion"],
+                Loc["Dialog.RestoreNvidiaTitle"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             var code = await SelfInstaller.RunElevatedAsync(uninstall: true);
-            if (code != 0) throw new IOException(Loc.IsEnglish ? "Restoration failed. See elevated installer message." : "Восстановление не выполнено. См. сообщение elevated-установщика.");
+            if (code != 0) throw new IOException(Loc["Error.RestoreFailed"]);
             setupReady = false; Notify(nameof(SetupLabel));
         }
         finally { Busy = false; operation.Release(); }
@@ -628,26 +634,32 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private void OnChanged() => OnUi(RefreshStatus);
     private void OnSaved(LibraryClip clip) => OnUi(async () =>
     {
-        try { await RefreshClipsAsync(); DesktopIntegration.NotifySaved(clip, recorder.Settings, log); Message = (Loc.IsEnglish ? "Saved: " : "Сохранён: ") + clip.Metadata.FileName; }
+        try { await RefreshClipsAsync(); DesktopIntegration.NotifySaved(clip, recorder.Settings, log); Message = Loc.Format("Status.ClipSaved", clip.Metadata.FileName); }
         catch (Exception ex) { Error(ex); }
     });
     private void OnUi(Action action)
     {
         if (!dispatcher.HasShutdownStarted && !stop.IsCancellationRequested) dispatcher.BeginInvoke(action);
     }
+    private static readonly string[] StatusProperties =
+    [
+        nameof(IsBufferActive), nameof(IsGameConnected), nameof(GameStatus), nameof(BufferStatus), nameof(BufferTime),
+        nameof(BufferTarget), nameof(BufferFill), nameof(MemoryText), nameof(GpuStatus), nameof(VideoStatus), nameof(EncodingModeLabel), nameof(CaptureDetail), nameof(PendingText),
+        nameof(ToggleLabel), nameof(ManualLabel), nameof(HotkeyLabel), nameof(SetupLabel), nameof(PipeLabel)
+    ];
     private void RefreshStatus()
     {
+        bool wasActive = IsBufferActive;
         status = recorder.Status;
-        foreach (var property in new[] { nameof(IsBufferActive), nameof(IsGameConnected), nameof(GameStatus), nameof(BufferStatus), nameof(BufferTime),
-            nameof(BufferTarget), nameof(BufferFill), nameof(MemoryText), nameof(GpuStatus), nameof(VideoStatus), nameof(EncodingModeLabel), nameof(CaptureDetail), nameof(PendingText),
-            nameof(ToggleLabel), nameof(ManualLabel), nameof(HotkeyLabel), nameof(SetupLabel), nameof(PipeLabel) }) Notify(property);
-        CommandManager.InvalidateRequerySuggested();
+        foreach (var property in StatusProperties) Notify(property);
+        // Only SaveCommand depends on live capture state; avoid re-querying every command four times a second.
+        if (IsBufferActive != wasActive) CommandManager.InvalidateRequerySuggested();
     }
     public void Error(Exception ex) { Message = ex.Message; log.Write(ex.Message, "ERROR"); }
     // A preview failure is not an export failure: the saved MP4 stays as written, so this is a warning, not an error.
     public void PlaybackFailed(int hresult, string fileName)
     {
-        Message = (Loc.IsEnglish ? "Clip saved: " : "Клип сохранён: ") + fileName + (Loc.IsEnglish ? ". Built-in player could not open it (" : ". Встроенный проигрыватель не открыл его (") + PlaybackDiagnostics.Code(hresult) + ").";
+        Message = Loc.Format("Status.PlaybackFailed", fileName, PlaybackDiagnostics.Code(hresult));
         log.Write(PlaybackDiagnostics.LogLine(hresult, fileName), "WARN");
     }
     private async Task CheckUpdateSilentAsync(CancellationToken token)
@@ -680,7 +692,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         isCheckingUpdate = true;
         Notify(nameof(IsCheckingUpdate));
         Notify(nameof(UpdateStatusLabel));
-        Message = Loc.IsEnglish ? "Checking for updates on GitHub…" : "Проверка обновлений на GitHub…";
+        Message = Loc["Update.CheckingGitHub"];
         try
         {
             var res = await Task.Run(() => UpdateCheckerService.CheckForUpdatesAsync(stop.Token));
@@ -694,15 +706,15 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
             if (res.HasUpdate)
             {
-                Message = Loc.IsEnglish ? $"New version {res.LatestVersion} is available! Click header button to view release." : $"Доступна новая версия {res.LatestVersion}! Нажмите кнопку в заголовке для перехода к релизу.";
+                Message = Loc.Format("Update.NewVersion", res.LatestVersion);
             }
             else if (!string.IsNullOrEmpty(res.ErrorMessage))
             {
-                Message = (Loc.IsEnglish ? "Failed to check updates: " : "Не удалось проверить обновления: ") + res.ErrorMessage;
+                Message = Loc.Format("Update.Failed", res.ErrorMessage);
             }
             else
             {
-                Message = Loc.IsEnglish ? $"You have the latest version ({res.CurrentVersion}). No updates." : $"У вас установлена актуальная версия ({res.CurrentVersion}). Обновлений нет.";
+                Message = Loc.Format("Update.Latest", res.CurrentVersion);
             }
         }
         finally
@@ -715,17 +727,24 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OpenUpdatePage()
     {
-        var url = !string.IsNullOrWhiteSpace(updateUrl) ? updateUrl : "https://github.com/Mlovo/HuntOpenHighlights/releases";
+        // The URL comes from a network response; only this repository's GitHub pages are opened.
+        const string releases = "https://github.com/Mlovo/HuntOpenHighlights/releases";
+        var url = Uri.TryCreate(updateUrl, UriKind.Absolute, out var parsed) && parsed.Scheme == Uri.UriSchemeHttps &&
+            parsed.Host == "github.com" && parsed.AbsolutePath.StartsWith("/Mlovo/HuntOpenHighlights/", StringComparison.Ordinal)
+            ? parsed.AbsoluteUri : releases;
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
     private void ToggleLanguage()
     {
         Loc.ToggleLanguage();
-        recorder.Settings.System.Language = Loc.IsEnglish ? "en" : "ru";
-        store.Save(recorder.Settings);
+        var language = Text.Language;
+        store.Save(recorder.UpdatePreferences(s => s.Language = language));
+        // Keep the edit copy in step, or the toggle reads as an unsaved change and a later Save reverts it.
+        SettingsEdit.System.Language = language;
         RebuildChoices();
-        RefreshDeviceSelections();
+        // Monitor captions are built in the current language at enumeration time.
+        _ = ReloadDevicesAsync();
         customMessage = null;
         customDiagnostics = null;
         Notify(nameof(Message));
@@ -756,8 +775,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private void ToggleTheme()
     {
         ThemeSvc.ToggleTheme();
-        recorder.Settings.System.Theme = ThemeSvc.ThemeCode;
-        store.Save(recorder.Settings);
+        store.Save(recorder.UpdatePreferences(s => s.Theme = ThemeSvc.ThemeCode));
+        SettingsEdit.System.Theme = ThemeSvc.ThemeCode;
         Notify(nameof(ThemeButtonLabel));
     }
 

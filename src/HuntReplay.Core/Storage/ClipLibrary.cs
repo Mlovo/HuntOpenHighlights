@@ -1,5 +1,6 @@
 using System.Text.Json;
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.Core.Storage;
 
@@ -97,7 +98,7 @@ public sealed class ClipLibrary(string directory, string storeRoot)
         lock (Gate)
         {
             EnsureChild(path);
-            if (!File.Exists(path) || IsLink(path)) throw new IOException("Клип отсутствует или является ссылкой.");
+            if (!File.Exists(path) || IsLink(path)) throw new IOException(Text.Get("Library.ClipMissingOrLink"));
             return WriteRecord(path, metadata with { FileName = Path.GetFileName(path), Bytes = new FileInfo(path).Length });
         }
     }
@@ -107,10 +108,10 @@ public sealed class ClipLibrary(string directory, string storeRoot)
         lock (Gate)
         {
             EnsureOwned(clip);
-            if (!ClipFileName.IsSafeName(newName)) throw new InvalidDataException("Недопустимое имя .mp4.");
+            if (!ClipFileName.IsSafeName(newName)) throw new InvalidDataException(Text.Get("Library.InvalidMp4Name"));
             var target = Resolve(newName);
             if (string.Equals(clip.FullPath, target, StringComparison.OrdinalIgnoreCase)) return clip;
-            if (File.Exists(target) || File.Exists(target + ".hunt.json")) throw new IOException("Это имя уже занято.");
+            if (File.Exists(target) || File.Exists(target + ".hunt.json")) throw new IOException(Text.Get("Library.NameTaken"));
             File.Move(clip.FullPath, target);
             LibraryClip renamed;
             try { renamed = WriteRecord(target, clip.Metadata with { FileName = newName, Id = FreeId(clip) }); }
@@ -137,12 +138,22 @@ public sealed class ClipLibrary(string directory, string storeRoot)
         lock (Gate)
         {
             EnsureOwned(clip);
-            File.Delete(clip.FullPath); // If locked by a player, metadata remains intact.
-            // Metadata goes last: if the MP4 survives, the clip stays listed and can be retried.
-            DeleteIfExists(clip.ThumbnailPath);
-            DeleteIfExists(clip.RecordPath);
-            RetireLegacy(clip.FullPath, null);
+            DeleteListed(clip);
         }
+    }
+
+    /// <summary>
+    /// Deletes a clip whose ownership is already proven: the caller holds <see cref="Gate"/> and took the clip
+    /// from <see cref="List"/> in the same critical section, so the full record re-scan of EnsureOwned is skipped.
+    /// </summary>
+    private void DeleteListed(LibraryClip clip)
+    {
+        EnsureNoLinks(clip);
+        File.Delete(clip.FullPath); // If locked by a player, metadata remains intact.
+        // Metadata goes last: if the MP4 survives, the clip stays listed and can be retried.
+        DeleteIfExists(clip.ThumbnailPath);
+        DeleteIfExists(clip.RecordPath);
+        RetireLegacy(clip.FullPath, null);
     }
 
     public int EnforceLimit(StorageSettings settings, ISet<Guid>? protectedIds = null)
@@ -155,18 +166,22 @@ public sealed class ClipLibrary(string directory, string storeRoot)
     {
         if (limit < 0) throw new ArgumentOutOfRangeException(nameof(limit));
         if (limit == 0) return 0;
-        var clips = List();
-        var bytes = clips.Sum(c => c.Metadata.Bytes);
-        var removed = 0;
-        foreach (var clip in clips.OrderBy(c => c.Metadata.CreatedAt))
+        lock (Gate)
         {
-            if (bytes <= limit) break;
-            if (protectedIds?.Contains(clip.Metadata.Id) == true) continue;
-            try { Delete(clip); bytes -= clip.Metadata.Bytes; removed++; }
-            catch (IOException) { /* Busy files are not force-deleted. */ }
-            catch (UnauthorizedAccessException) { }
+            // One listing for the whole pass: per-clip Delete would re-read every record for each removal.
+            var clips = List();
+            var bytes = clips.Sum(c => c.Metadata.Bytes);
+            var removed = 0;
+            foreach (var clip in clips.OrderBy(c => c.Metadata.CreatedAt))
+            {
+                if (bytes <= limit) break;
+                if (protectedIds?.Contains(clip.Metadata.Id) == true) continue;
+                try { DeleteListed(clip); bytes -= clip.Metadata.Bytes; removed++; }
+                catch (IOException) { /* Busy files are not force-deleted. */ }
+                catch (UnauthorizedAccessException) { }
+            }
+            return removed;
         }
-        return removed;
     }
 
     /// <summary>
@@ -191,9 +206,11 @@ public sealed class ClipLibrary(string directory, string storeRoot)
     public static void RequireDiskSpace(string path, long estimatedBytes)
     {
         var root = Path.GetPathRoot(Path.GetFullPath(path))!;
-        var drive = new DriveInfo(root);
+        DriveInfo drive;
+        try { drive = new DriveInfo(root); }
+        catch (ArgumentException) { return; } // UNC shares cannot be queried; a full share still fails the write itself.
         if (drive.IsReady && drive.AvailableFreeSpace < estimatedBytes + 128L * 1024 * 1024)
-            throw new IOException("Недостаточно места: нужен размер клипа + 128 МБ резерва.");
+            throw new IOException(Text.Get("Library.NotEnoughSpace"));
     }
 
     private LibraryClip WriteRecord(string path, ClipMetadata clip)
@@ -450,7 +467,7 @@ public sealed class ClipLibrary(string directory, string storeRoot)
 
     private string Resolve(string name)
     {
-        if (!ClipFileName.IsSafeName(name)) throw new InvalidDataException("Недопустимое имя клипа.");
+        if (!ClipFileName.IsSafeName(name)) throw new InvalidDataException(Text.Get("Library.InvalidClipName"));
         var path = Path.Combine(Root, name);
         EnsureChild(path);
         return path;
@@ -459,18 +476,23 @@ public sealed class ClipLibrary(string directory, string storeRoot)
     private void EnsureChild(string path)
     {
         if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Root, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Файл вне библиотеки клипов.");
-        if (Directory.Exists(Root) && IsLink(Root)) throw new IOException("Библиотека не должна быть reparse point.");
+            throw new InvalidDataException(Text.Get("Library.OutsideLibrary"));
+        if (Directory.Exists(Root) && IsLink(Root)) throw new IOException(Text.Get("Library.RootIsLink"));
     }
 
-    private void EnsureOwned(LibraryClip clip)
+    private void EnsureNoLinks(LibraryClip clip)
     {
         EnsureChild(clip.FullPath);
         if (IsLink(clip.FullPath) || IsExistingLink(clip.RecordPath) || IsExistingLink(clip.ThumbnailPath) ||
             IsExistingLink(clip.FullPath + ".hunt.json") || IsExistingLink(clip.FullPath + ".thumb.png"))
-            throw new IOException("Операции со ссылками запрещены.");
+            throw new IOException(Text.Get("Library.LinksForbidden"));
+    }
+
+    private void EnsureOwned(LibraryClip clip)
+    {
+        EnsureNoLinks(clip);
         var actual = List().FirstOrDefault(c => c.FullPath == clip.FullPath);
-        if (actual?.Metadata.Id != clip.Metadata.Id) throw new IOException("Файл не принадлежит HuntReplay Studio.");
+        if (actual?.Metadata.Id != clip.Metadata.Id) throw new IOException(Text.Get("Library.NotOwned"));
     }
 
     private static bool IsExistingLink(string path) => File.Exists(path) && IsLink(path);

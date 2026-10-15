@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Threading;
+using HuntReplay.Core.Localization;
 
 namespace HuntReplay.App.Services;
 
@@ -181,12 +182,12 @@ internal static class NvidiaServiceManager
                         {
                             p.Kill(true);
                             p.WaitForExit(1000);
-                            log?.Write($"Процесс nvcontainer (PID {p.Id}) успешно завершён.");
+                            log?.Write(Text.Format("Nvidia.ProcessStopped", p.Id));
                         }
                     }
                     catch (Exception ex)
                     {
-                        log?.Write($"Не удалось завершить процесс nvcontainer (PID {p.Id}): {ex.Message}", "WARN");
+                        log?.Write(Text.Format("Nvidia.ProcessStopFailed", p.Id, ex.Message), "WARN");
                     }
                     finally
                     {
@@ -196,7 +197,7 @@ internal static class NvidiaServiceManager
             }
             catch (Exception ex)
             {
-                log?.Write("Ошибка при завершении процессов nvcontainer: " + ex.Message, "WARN");
+                log?.Write(Text.Format("Nvidia.ProcessesStopError", ex.Message), "WARN");
                 break;
             }
             if (attempt == 0) Thread.Sleep(100);
@@ -243,11 +244,11 @@ internal static class NvidiaServiceManager
             {
                 if (StoppedServices.Count > 0)
                 {
-                    log?.Write("Служба NVIDIA временно остановлена для автозахвата хайлайтов. Будет включена обратно при выходе.");
+                    log?.Write(Text.Get("Nvidia.ServicePaused"));
                     bool keeperReady = await StartKeeperProcessAsync(StoppedServices, elevated: false, log);
                     if (keeperReady)
                     {
-                        log?.Write("Хранитель службы NVIDIA активен.");
+                        log?.Write(Text.Get("Nvidia.KeeperActive"));
                     }
                 }
                 return;
@@ -260,18 +261,18 @@ internal static class NvidiaServiceManager
             bool signalled = await StartKeeperProcessAsync(servicesToPass, elevated: true, log);
             if (signalled)
             {
-                log?.Write("Служба NVIDIA приостановлена хранителем. Будет автоматически возобновлена при закрытии.");
+                log?.Write(Text.Get("Nvidia.PausedByKeeper"));
                 await Task.Delay(300);
                 StopResidualProcesses(log);
             }
             else
             {
-                log?.Write("Хранитель службы NVIDIA не ответил в отведённое время.", "WARN");
+                log?.Write(Text.Get("Nvidia.KeeperTimeout"), "WARN");
             }
         }
         catch (Exception ex)
         {
-            log?.Write("Не удалось приостановить службу NVIDIA: " + ex.Message, "WARN");
+            log?.Write(Text.Format("Nvidia.PauseFailed", ex.Message), "WARN");
         }
     }
 
@@ -303,7 +304,7 @@ internal static class NvidiaServiceManager
         using var readyEvent = CreateKeeperReadyEvent(readyEventName, out _);
 
         var serviceArgs = string.Join(" ", services);
-        var startInfo = new ProcessStartInfo(Environment.ProcessPath ?? throw new IOException("Неизвестен путь приложения."))
+        var startInfo = new ProcessStartInfo(Environment.ProcessPath ?? throw new IOException(Text.Get("Startup.ExePathUnknown")))
         {
             UseShellExecute = true,
             Verb = elevated ? "runas" : "",
@@ -315,7 +316,7 @@ internal static class NvidiaServiceManager
         if (keeperProcess is not null)
         {
             if (elevated)
-                log?.Write("Запрошены права администратора для временной приостановки службы NVIDIA.");
+                log?.Write(Text.Get("Nvidia.ElevationRequested"));
             var timeout = TimeSpan.FromSeconds(elevated ? 30 : 10);
             return await Task.Run(() => readyEvent.WaitOne(timeout));
         }
@@ -330,12 +331,12 @@ internal static class NvidiaServiceManager
             {
                 if (StartServiceInternal(svc))
                 {
-                    log?.Write($"Служба {svc} успешно возобновлена.");
+                    log?.Write(Text.Format("Nvidia.ServiceRestored", svc));
                 }
             }
             catch (Exception ex)
             {
-                log?.Write($"Ошибка запуска службы {svc}: " + ex.Message, "WARN");
+                log?.Write(Text.Format("Nvidia.ServiceRestoreFailed", svc, ex.Message), "WARN");
             }
         }
         StoppedServices.Clear();

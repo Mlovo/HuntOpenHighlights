@@ -4,6 +4,7 @@ using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text.Json;
+using HuntReplay.Core.Localization;
 using Microsoft.Win32;
 
 namespace HuntReplay.App.Services;
@@ -47,10 +48,10 @@ internal static class SelfInstaller
     public static SetupStatus Check()
     {
         var valid = false;
-        var detail = "MessageBus.dll ещё не установлен.";
+        var detail = Text.Get("Install.NotInstalled");
         if (File.Exists(DllPath))
         {
-            try { CheckDll(DllPath); valid = true; detail = "SHA-256 и цифровая подпись NVIDIA подтверждены Windows."; }
+            try { CheckDll(DllPath); valid = true; detail = Text.Get("Install.Verified"); }
             catch (Exception ex) { detail = ex.Message; }
         }
         bool r64 = RegistryReady(RegistryView.Registry64), r32 = RegistryReady(RegistryView.Registry32);
@@ -95,12 +96,12 @@ internal static class SelfInstaller
 
     public static async Task<int> RunElevatedAsync(bool uninstall = false, bool replaceNvidia = false)
     {
-        var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new IOException("Неизвестен путь приложения."))
+        var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new IOException(Text.Get("Startup.ExePathUnknown")))
         {
             UseShellExecute = true, Verb = "runas",
             Arguments = uninstall ? "--uninstall-shim" : "--install-shim" + (replaceNvidia ? " --replace-nvidia" : "")
         };
-        using var child = Process.Start(start) ?? throw new IOException("UAC не запустил установщик.");
+        using var child = Process.Start(start) ?? throw new IOException(Text.Get("Install.UacDidNotStart"));
         await child.WaitForExitAsync().ConfigureAwait(false);
         return child.ExitCode;
     }
@@ -109,9 +110,10 @@ internal static class SelfInstaller
     {
         RequireAdministrator();
         RefuseLinks(ShimDirectory); RefuseLinks(DataDirectory);
+        RefuseForeignOwner(ShimDirectory); RefuseForeignOwner(DataDirectory);
         var status = Check();
         if (status.Conflict && !replaceNvidia)
-            throw new InvalidOperationException("Обнаружена другая регистрация NVIDIA. Нужно явное согласие на замену с резервной копией.");
+            throw new InvalidOperationException(Text.Get("Install.ConflictNeedsConsent"));
         if (File.Exists(DllPath)) CheckDll(DllPath); // Never overwrite an unknown DLL.
         ProtectDirectory(DataDirectory, writableByUsers: false);
         if (File.Exists(BackupFile)) RefuseFileLink(BackupFile);
@@ -122,7 +124,7 @@ internal static class SelfInstaller
         if (hadBackup)
         {
             backup = ReadBackup();
-            if (!backup.Completed) throw new IOException("Незавершённая установка. Сначала выполните восстановление регистрации.");
+            if (!backup.Completed) throw new IOException(Text.Get("Install.Incomplete"));
         }
         else
         {
@@ -141,7 +143,7 @@ internal static class SelfInstaller
                 try
                 {
                     using (var source = Assembly.GetExecutingAssembly().GetManifestResourceStream("HuntReplay.Payload.MessageBus.dll")
-                        ?? throw new FileNotFoundException("Встроенная MessageBus.dll отсутствует."))
+                        ?? throw new FileNotFoundException(Text.Get("Install.PayloadMissing")))
                     using (var destination = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) source.CopyTo(destination);
                     CheckDll(temp);
                     File.Move(temp, DllPath);
@@ -174,7 +176,7 @@ internal static class SelfInstaller
             }
             catch (Exception rollbackError)
             {
-                throw new IOException("Установка и автоматический rollback не завершены. Резервная копия сохранена; закройте игру и выполните восстановление. " + rollbackError.Message,
+                throw new IOException(Text.Format("Install.RollbackFailed", rollbackError.Message),
                     new AggregateException(installError, rollbackError));
             }
             throw;
@@ -185,7 +187,7 @@ internal static class SelfInstaller
     {
         RequireAdministrator();
         RefuseLinks(DataDirectory); RefuseLinks(ShimDirectory);
-        if (!File.Exists(BackupFile)) throw new IOException("Нет резервной копии этой установки. Чужие ключи удаляться не будут.");
+        if (!File.Exists(BackupFile)) throw new IOException(Text.Get("Install.NoBackup"));
         var backup = ReadBackup();
         RestoreValues(backup, onlyIfOwned: true);
         if (backup.CreatedDll && File.Exists(DllPath))
@@ -259,15 +261,15 @@ internal static class SelfInstaller
     {
         RefuseFileLink(BackupFile);
         var owner = new FileInfo(BackupFile).GetAccessControl().GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier
-            ?? throw new InvalidDataException("Не определён владелец резервной копии.");
+            ?? throw new InvalidDataException(Text.Get("Install.BackupOwnerUnknown"));
         if (!owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) && !owner.IsWellKnown(WellKnownSidType.LocalSystemSid))
-            throw new InvalidDataException("Резервная копия не принадлежит Administrators/SYSTEM. Установка остановлена.");
-        if (new FileInfo(BackupFile).Length > 65536) throw new InvalidDataException("Некорректная резервная копия установки.");
-        var backup = JsonSerializer.Deserialize<InstallationBackup>(File.ReadAllText(BackupFile)) ?? throw new InvalidDataException("Пустая резервная копия.");
+            throw new InvalidDataException(Text.Get("Install.BackupOwnerForeign"));
+        if (new FileInfo(BackupFile).Length > 65536) throw new InvalidDataException(Text.Get("Install.BackupInvalid"));
+        var backup = JsonSerializer.Deserialize<InstallationBackup>(File.ReadAllText(BackupFile)) ?? throw new InvalidDataException(Text.Get("Install.BackupEmpty"));
         if (backup.Owner != "HuntReplayStudio/1" || backup.Hash != DllHash || backup.Values.Count != 8 ||
             backup.Values.Any(v => !Views.Contains(v.View) || !DesiredValues().Any(e => e.Key == v.Key && e.Name == v.Name)) ||
             backup.Values.DistinctBy(v => (v.View, v.Key, v.Name)).Count() != 8)
-            throw new InvalidDataException("Резервная копия установки не принадлежит HuntReplay Studio.");
+            throw new InvalidDataException(Text.Get("Install.BackupNotOurs"));
         return backup;
     }
 
@@ -289,7 +291,7 @@ internal static class SelfInstaller
         RefuseFileLink(path);
         using (var stream = File.OpenRead(path))
             if (!Convert.ToHexString(SHA256.HashData(stream)).Equals(DllHash, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("MessageBus.dll отличается от встроенного оригинала (SHA-256). Файл не будет заменён.");
+                throw new InvalidDataException(Text.Get("Install.DllHashMismatch"));
         Authenticode.VerifyNvidia(path);
     }
 
@@ -326,17 +328,25 @@ internal static class SelfInstaller
     {
         for (var directory = new DirectoryInfo(Path.GetFullPath(path)); directory is not null; directory = directory.Parent)
             if (directory.Exists && (directory.Attributes & FileAttributes.ReparsePoint) != 0)
-                throw new IOException("Установка через reparse point запрещена: " + directory.FullName);
+                throw new IOException(Text.Format("Install.ReparsePoint", directory.FullName));
+    }
+    // A standard user can pre-create these folders and keep an open handle across the ACL reset.
+    private static void RefuseForeignOwner(string path)
+    {
+        if (!Directory.Exists(path)) return;
+        var owner = new DirectoryInfo(path).GetAccessControl().GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+        if (owner is null || !(owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) || owner.IsWellKnown(WellKnownSidType.LocalSystemSid)))
+            throw new IOException(Text.Format("Install.ForeignOwner", path));
     }
     private static void RefuseFileLink(string path)
     {
         RefuseLinks(Path.GetDirectoryName(path)!);
-        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("DLL/резервная копия не должна быть ссылкой.");
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException(Text.Get("Install.FileIsLink"));
     }
     private static void RequireAdministrator()
     {
         using var identity = WindowsIdentity.GetCurrent();
         if (!new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
-            throw new UnauthorizedAccessException("Для установки MessageBus нужен отдельный UAC-процесс.");
+            throw new UnauthorizedAccessException(Text.Get("Install.NeedsElevation"));
     }
 }

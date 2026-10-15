@@ -1,6 +1,7 @@
 <UserControl x:Class="HuntReplay.App.Controls.RangeSlider"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="clr-namespace:HuntReplay.App.Services"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
@@ -124,7 +125,7 @@
                     PreviewMouseLeftButtonDown="OnRangeBarMouseDown"
                     PreviewMouseMove="OnRangeBarMouseMove"
                     PreviewMouseLeftButtonUp="OnRangeBarMouseUp"
-                    ToolTip="Перетащите, чтобы сдвинуть весь фрагмент"/>
+                    ToolTip="{Binding [Slider.DragRange], Source={x:Static services:LocalizationService.Instance}}"/>
 
             <!-- Dimmed Right Region (RangeEnd to Maximum) -->
             <Border x:Name="UnselectedRightTrack" Height="6" Canvas.Top="13"
@@ -135,21 +136,21 @@
                    DragStarted="OnPlayheadDragStarted"
                    DragDelta="OnPlayheadDragDelta"
                    DragCompleted="OnPlayheadDragCompleted"
-                   ToolTip="Текущая позиция воспроизведения"/>
+                   ToolTip="{Binding [Slider.Playhead], Source={x:Static services:LocalizationService.Instance}}"/>
 
             <!-- Start Boundary Handle -->
             <Thumb x:Name="StartThumb" Style="{StaticResource StartThumbStyle}" Canvas.Top="3"
                    DragStarted="OnStartThumbDragStarted"
                    DragDelta="OnStartThumbDragDelta"
                    DragCompleted="OnStartThumbDragCompleted"
-                   ToolTip="Начало фрагмента"/>
+                   ToolTip="{Binding [Slider.RangeStart], Source={x:Static services:LocalizationService.Instance}}"/>
 
             <!-- End Boundary Handle -->
             <Thumb x:Name="EndThumb" Style="{StaticResource EndThumbStyle}" Canvas.Top="3"
                    DragStarted="OnEndThumbDragStarted"
                    DragDelta="OnEndThumbDragDelta"
                    DragCompleted="OnEndThumbDragCompleted"
-                   ToolTip="Конец фрагмента"/>
+                   ToolTip="{Binding [Slider.RangeEnd], Source={x:Static services:LocalizationService.Instance}}"/>
         </Canvas>
     </Grid>
 </UserControl>

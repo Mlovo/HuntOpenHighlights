@@ -1,3 +1,5 @@
+using HuntReplay.Core.Localization;
+
 namespace HuntReplay.Core.Media;
 
 /// <summary>
@@ -30,14 +32,14 @@ public sealed class PacketRingBuffer
         if (packet.StreamIndex is < 0 or > 2 || packet.Payload.Length == 0 || packet.DurationUs < 0 ||
             packet.PtsUs < -1_000_000 || packet.DtsUs < -1_000_000 ||
             packet.PtsUs > long.MaxValue - packet.DurationUs)
-            throw new InvalidDataException("Некорректный пакет энкодера.");
+            throw new InvalidDataException(Text.Get("Buffer.InvalidPacket"));
         lock (gate)
         {
             var video = streams[0];
             if (video.Count == 0 && !(packet.IsVideo && packet.IsKeyFrame)) return;
             if (!streams.TryGetValue(packet.StreamIndex, out var queue)) streams[packet.StreamIndex] = queue = new();
             if (queue.Last is { } last && packet.DtsUs <= last.Value.DtsUs)
-                throw new InvalidDataException("DTS энкодера пошёл назад.");
+                throw new InvalidDataException(Text.Get("Buffer.DtsBackwards"));
             if (!packet.IsVideo && packet.DtsUs < video.First!.Value.DtsUs) return;
             queue.AddLast(packet);
             bytes += packet.Payload.Length;
