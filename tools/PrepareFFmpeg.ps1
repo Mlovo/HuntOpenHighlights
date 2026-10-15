@@ -5,6 +5,15 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Root = Split-Path $PSScriptRoot -Parent
 $Lock = Get-Content (Join-Path $PSScriptRoot 'ffmpeg.lock.json') -Raw | ConvertFrom-Json
+$Destination = Join-Path $Root 'native/vendor/ffmpeg'
+# The marker is written only after a checksum-verified extraction. When it names the pinned archive and the generated
+# import libraries exist, the SDK is ready: the archive is not needed (nor downloaded) again.
+$Marker = Join-Path $Destination '.hunt-source-sha256'
+if ((Test-Path $Marker) -and (Get-Content $Marker -Raw).Trim() -eq $Lock.sha256 -and
+    @(Get-ChildItem (Join-Path $Destination 'lib') -Filter '*.lib' -ErrorAction SilentlyContinue).Count -ge 5) {
+    Write-Host "Verified FFmpeg SDK already prepared ($($Lock.sha256))"
+    return
+}
 $Cache = Join-Path $Root '.cache/downloads'
 New-Item $Cache -ItemType Directory -Force | Out-Null
 if (!$ArchivePath) { $ArchivePath = Join-Path $Cache $Lock.name }
@@ -19,7 +28,6 @@ if (!(Test-Path $ArchivePath)) {
 $Hash = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($Hash -ne $Lock.sha256) { throw "FFmpeg checksum mismatch. Refusing to compile or embed untrusted binaries. Expected $($Lock.sha256); got $Hash" }
 $Extract = Join-Path $Root ('.cache/ffmpeg-' + [Guid]::NewGuid().ToString('N'))
-$Destination = Join-Path $Root 'native/vendor/ffmpeg'
 try {
     Expand-Archive -LiteralPath $ArchivePath -DestinationPath $Extract
     $Sdk = Get-ChildItem -LiteralPath $Extract -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'include/libavcodec/avcodec.h') } | Select-Object -First 1

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -39,58 +38,21 @@ public static class UpdateCheckerService
 
     public static async Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
     {
-        var currentVersionStr = GetCurrentVersionString();
+        var current = GetCurrentVersionString();
+        UpdateCheckResult Fail(string error) => new(false, current, null, null, null, error);
         try
         {
-            using var response = await HttpClient.GetAsync(ApiUrl, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                return new UpdateCheckResult(
-                    false,
-                    currentVersionStr,
-                    null,
-                    null,
-                    null,
-                    $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
-            }
-
-            var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var tagName = root.TryGetProperty("tag_name", out var tagElem) ? tagElem.GetString() ?? "" : "";
-            var htmlUrl = root.TryGetProperty("html_url", out var urlElem) ? urlElem.GetString() ?? "" : "";
-            var body = root.TryGetProperty("body", out var bodyElem) ? bodyElem.GetString() ?? "" : "";
-
-            var cleanTag = tagName.TrimStart('v', 'V').Trim();
-            if (Version.TryParse(cleanTag, out var latestVer) &&
-                Version.TryParse(currentVersionStr, out var currentVer))
-            {
-                bool hasUpdate = latestVer > currentVer;
-                return new UpdateCheckResult(
-                    hasUpdate,
-                    currentVersionStr,
-                    cleanTag,
-                    string.IsNullOrWhiteSpace(htmlUrl) ? null : htmlUrl,
-                    body,
-                    null);
-            }
-
-            return new UpdateCheckResult(
-                false,
-                currentVersionStr,
-                string.IsNullOrWhiteSpace(cleanTag) ? null : cleanTag,
-                htmlUrl,
-                body,
-                null);
+            using var response = await HttpClient.GetAsync(ApiUrl, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return Fail($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken).ConfigureAwait(false);
+            string Prop(string name) => doc.RootElement.TryGetProperty(name, out var e) ? e.GetString() ?? "" : "";
+            var tag = Prop("tag_name").TrimStart('v', 'V').Trim();
+            var url = Prop("html_url");
+            bool newer = Version.TryParse(tag, out var latest) && Version.TryParse(current, out var mine) && latest > mine;
+            return new(newer, current, tag.Length == 0 ? null : tag, url.Length == 0 ? null : url, Prop("body"), null);
         }
-        catch (OperationCanceledException)
-        {
-            return new UpdateCheckResult(false, currentVersionStr, null, null, null, Text.Get("Update.Cancelled"));
-        }
-        catch (Exception ex)
-        {
-            return new UpdateCheckResult(false, currentVersionStr, null, null, null, ex.Message);
-        }
+        catch (OperationCanceledException) { return Fail(Text.Get("Update.Cancelled")); }
+        catch (Exception ex) { return Fail(ex.Message); }
     }
 }

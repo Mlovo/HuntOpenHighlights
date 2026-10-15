@@ -1,53 +1,50 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace HuntReplay.App.Interop;
 
-internal static class GameWindow
+/// <summary>
+/// One system-wide process enumeration. Process.GetProcessesByName enumerates every process on each call,
+/// so a probe that asks several questions takes a single snapshot and queries it.
+/// </summary>
+internal sealed class ProcessSnapshot
 {
-    private static readonly string[] PrimaryGameProcessNames = { "HuntGame", "HuntGameSteam" };
-    private static readonly string[] LauncherProcessNames = { "Hunt" };
+    private readonly ILookup<string, int> idsByName;
+    private readonly HashSet<int> ids;
 
-    public static bool HasGameProcess(int additionalPid = 0)
+    private ProcessSnapshot(ILookup<string, int> idsByName)
     {
-        if (additionalPid > 0)
-        {
-            try
-            {
-                var p = Process.GetProcessById(additionalPid);
-                using (p) if (!p.HasExited) return true;
-            }
-            catch { }
-        }
-        foreach (var name in PrimaryGameProcessNames)
-        {
-            var procs = Process.GetProcessesByName(name);
-            if (procs.Length > 0)
-            {
-                foreach (var p in procs) p.Dispose();
-                return true;
-            }
-        }
-        foreach (var name in LauncherProcessNames)
-        {
-            var procs = Process.GetProcessesByName(name);
-            if (procs.Length > 0)
-            {
-                foreach (var p in procs) p.Dispose();
-                return true;
-            }
-        }
-        return false;
+        this.idsByName = idsByName;
+        ids = idsByName.SelectMany(group => group).ToHashSet();
     }
 
-    public static IntPtr Find(int additionalPid = 0)
+    public static ProcessSnapshot Take()
     {
-        var candidatePids = new HashSet<int>();
+        var processes = Process.GetProcesses();
+        try { return new(processes.ToLookup(p => p.ProcessName, p => p.Id, StringComparer.OrdinalIgnoreCase)); }
+        finally { foreach (var process in processes) process.Dispose(); }
+    }
+
+    public bool Has(string name) => idsByName.Contains(name);
+    public IEnumerable<int> Ids(string name) => idsByName[name];
+    public bool IsAlive(int pid) => ids.Contains(pid);
+}
+
+internal static partial class GameWindow
+{
+    private static readonly string[] PrimaryGameProcessNames = ["HuntGame", "HuntGameSteam"];
+    private static readonly string[] LauncherProcessNames = ["Hunt"];
+
+    public static bool HasGameProcess(ProcessSnapshot processes, int additionalPid = 0) =>
+        (additionalPid > 0 && processes.IsAlive(additionalPid)) ||
+        PrimaryGameProcessNames.Concat(LauncherProcessNames).Any(processes.Has);
+
+    public static IntPtr Find(int additionalPid = 0) => Find(ProcessSnapshot.Take(), additionalPid);
+
+    public static IntPtr Find(ProcessSnapshot processes, int additionalPid = 0)
+    {
+        var candidatePids = PrimaryGameProcessNames.SelectMany(processes.Ids).ToHashSet();
         if (additionalPid > 0) candidatePids.Add(additionalPid);
-        foreach (var name in PrimaryGameProcessNames)
-            foreach (var process in Process.GetProcessesByName(name))
-                using (process) candidatePids.Add(process.Id);
         if (candidatePids.Count == 0) return IntPtr.Zero;
 
         IntPtr bestWindow = IntPtr.Zero;
@@ -82,7 +79,7 @@ internal static class GameWindow
             int score = 100;
             if (additionalPid > 0 && windowPid == additionalPid) score += 10000;
             if (string.Equals(className, "CryENGINE", StringComparison.OrdinalIgnoreCase)) score += 3000;
-            if (title.IndexOf("Hunt", StringComparison.OrdinalIgnoreCase) >= 0) score += 1000;
+            if (title.Contains("Hunt", StringComparison.OrdinalIgnoreCase)) score += 1000;
             if (!isIconic)
             {
                 score += 500;
@@ -101,40 +98,37 @@ internal static class GameWindow
         return bestWindow;
     }
 
-    private static bool IsSplashOrEac(string title, string className)
+    private static readonly string[] SplashTitles = ["Easy Anti-Cheat", "EasyAntiCheat", "Waiting for game", "Splash"];
+    private static readonly string[] SplashClasses = ["EasyAntiCheat", "Splash"];
+
+    private static bool IsSplashOrEac(string title, string className) =>
+        SplashTitles.Any(s => title.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+        SplashClasses.Any(s => className.Contains(s, StringComparison.OrdinalIgnoreCase));
+
+    private static unsafe string GetWindowTitle(IntPtr hWnd)
     {
-        if (title.IndexOf("Easy Anti-Cheat", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-        if (title.IndexOf("EasyAntiCheat", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-        if (title.IndexOf("Waiting for game", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-        if (title.IndexOf("Splash", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-        if (className.IndexOf("EasyAntiCheat", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-        if (className.IndexOf("Splash", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-        return false;
+        char* buffer = stackalloc char[256];
+        int length = GetWindowTextNative(hWnd, buffer, 256);
+        return length > 0 ? new string(buffer, 0, length) : string.Empty;
     }
 
-    private static string GetWindowTitle(IntPtr hWnd)
+    private static unsafe string GetWindowClassName(IntPtr hWnd)
     {
-        var sb = new StringBuilder(256);
-        return GetWindowTextNative(hWnd, sb, sb.Capacity) > 0 ? sb.ToString() : string.Empty;
-    }
-
-    private static string GetWindowClassName(IntPtr hWnd)
-    {
-        var sb = new StringBuilder(256);
-        return GetClassNameNative(hWnd, sb, sb.Capacity) > 0 ? sb.ToString() : string.Empty;
+        char* buffer = stackalloc char[256];
+        int length = GetClassNameNative(hWnd, buffer, 256);
+        return length > 0 ? new string(buffer, 0, length) : string.Empty;
     }
 
     private const uint GW_OWNER = 4;
     private delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
     [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+    // Delegate callbacks are not supported by source-generated LibraryImport; EnumWindows keeps DllImport.
     [DllImport("user32")] private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
-    [DllImport("user32")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
-    [DllImport("user32")] private static extern bool IsWindowVisible(IntPtr window);
-    [DllImport("user32")] private static extern bool IsIconic(IntPtr window);
-    [DllImport("user32")] private static extern IntPtr GetWindow(IntPtr window, uint command);
-    [DllImport("user32")] private static extern bool GetClientRect(IntPtr window, out Rect rect);
-    [DllImport("user32", EntryPoint = "GetWindowTextW", CharSet = CharSet.Unicode)]
-    private static extern int GetWindowTextNative(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport("user32", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode)]
-    private static extern int GetClassNameNative(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+    [LibraryImport("user32")] private static partial uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+    [LibraryImport("user32")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool IsWindowVisible(IntPtr window);
+    [LibraryImport("user32")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool IsIconic(IntPtr window);
+    [LibraryImport("user32")] private static partial IntPtr GetWindow(IntPtr window, uint command);
+    [LibraryImport("user32")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool GetClientRect(IntPtr window, out Rect rect);
+    [LibraryImport("user32", EntryPoint = "GetWindowTextW")] private static unsafe partial int GetWindowTextNative(IntPtr hWnd, char* text, int maxCount);
+    [LibraryImport("user32", EntryPoint = "GetClassNameW")] private static unsafe partial int GetClassNameNative(IntPtr hWnd, char* className, int maxCount);
 }

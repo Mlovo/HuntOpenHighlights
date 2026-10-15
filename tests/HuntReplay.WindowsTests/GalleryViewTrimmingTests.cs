@@ -341,69 +341,7 @@ public static class GalleryViewTrimmingTests
     {
         Program.Test("production RangeSlider: loads from assembly, mounts in WPF tree, and enforces invariants", () =>
         {
-            string baseDir = AppContext.BaseDirectory;
-            string? root = null;
-            var dir = new DirectoryInfo(baseDir);
-            while (dir != null)
-            {
-                if (File.Exists(Path.Combine(dir.FullName, "HuntReplayStudio.sln")))
-                {
-                    root = dir.FullName;
-                    break;
-                }
-                dir = dir.Parent;
-            }
-
-            string[] candidatePaths = root != null
-                ? [
-                    Path.Combine(root, "src", "HuntReplay.App", "bin", "x64", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
-                    Path.Combine(root, "src", "HuntReplay.App", "bin", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
-                    Path.Combine(root, "src", "HuntReplay.App", "bin", "Debug", "net8.0-windows", "HuntReplayStudio.dll"),
-                    Path.Combine(root, "src", "HuntReplay.App", "bin", "Release", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
-                    Path.Combine(root, "src", "HuntReplay.App", "bin", "x64", "Release", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
-                    Path.Combine(baseDir, "HuntReplayStudio.dll")
-                ]
-                : [
-                    Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "src", "HuntReplay.App", "bin", "x64", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll")),
-                    Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "src", "HuntReplay.App", "bin", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll")),
-                    Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "src", "HuntReplay.App", "bin", "x64", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll")),
-                    Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "src", "HuntReplay.App", "bin", "Debug", "net8.0-windows", "HuntReplayStudio.dll")),
-                    Path.Combine(baseDir, "HuntReplayStudio.dll")
-                ];
-
-            string? assemblyPath = candidatePaths.FirstOrDefault(File.Exists);
-            if (assemblyPath == null && root != null)
-            {
-                var appBin = Path.Combine(root, "src", "HuntReplay.App", "bin");
-                if (Directory.Exists(appBin))
-                {
-                    assemblyPath = Directory.GetFiles(appBin, "HuntReplayStudio.dll", SearchOption.AllDirectories).FirstOrDefault();
-                }
-            }
-
-            if (assemblyPath == null && root != null)
-            {
-                var psi = new System.Diagnostics.ProcessStartInfo("dotnet", $"build \"{Path.Combine(root, "src", "HuntReplay.App")}\" -c Release")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                var proc = System.Diagnostics.Process.Start(psi);
-                proc?.WaitForExit();
-                assemblyPath = candidatePaths.FirstOrDefault(File.Exists);
-                if (assemblyPath == null)
-                {
-                    var appBin = Path.Combine(root, "src", "HuntReplay.App", "bin");
-                    if (Directory.Exists(appBin))
-                    {
-                        assemblyPath = Directory.GetFiles(appBin, "HuntReplayStudio.dll", SearchOption.AllDirectories).FirstOrDefault();
-                    }
-                }
-            }
-
-            Program.True(assemblyPath != null);
-
-            var asm = Assembly.LoadFrom(assemblyPath!);
+            var asm = AppUnderTest.Load();
             var sliderType = asm.GetType("HuntReplay.App.Controls.RangeSlider");
             Program.True(sliderType != null);
 

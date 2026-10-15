@@ -59,7 +59,7 @@
                       <DropShadowEffect BlurRadius="16" ShadowDepth="4" Opacity="0.5" Direction="270"/>
                     </Border.Effect>
                     <StackPanel>
-                      <Border CornerRadius="4" ClipToBounds="True" Background="#080C0E" Height="96">
+                      <Border CornerRadius="4" ClipToBounds="True" Background="{DynamicResource PlayerPlaceholder}" Height="96">
                         <Image x:Name="PreviewThumb" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="Linear"/>
                       </Border>
                       <TextBlock x:Name="PreviewTime" Text="00:00" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center" Margin="0,5,0,2"/>

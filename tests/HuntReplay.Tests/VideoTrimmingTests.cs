@@ -11,6 +11,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using static HuntReplay.TestShared.MediaTestKit;
+
 namespace HuntReplay.Tests;
 
 public static partial class Program
@@ -97,42 +99,6 @@ public static partial class Program
         }
     }
 
-    private static string? TryResolveBundledTool(string toolName)
-    {
-        string dir = AppContext.BaseDirectory;
-        for (int i = 0; i < 6; i++)
-        {
-            string candidate = Path.Combine(dir, "native", "vendor", "ffmpeg", "bin", toolName);
-            if (File.Exists(candidate)) return candidate;
-            string? parent = Path.GetDirectoryName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (parent == null || parent == dir) break;
-            dir = parent;
-        }
-        string cwdCandidate = Path.Combine(Directory.GetCurrentDirectory(), "native", "vendor", "ffmpeg", "bin", toolName);
-        if (File.Exists(cwdCandidate)) return cwdCandidate;
-        return null;
-    }
-
-    private static string ResolveBundledTool(string toolName) =>
-        TryResolveBundledTool(toolName) ?? throw new FileNotFoundException($"Bundled tool {toolName} not found.");
-
-    private static void RunProcess(string exePath, string arguments)
-    {
-        var psi = new ProcessStartInfo(exePath, arguments)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {exePath}");
-        string stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit(10000);
-        if (proc.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"{Path.GetFileName(exePath)} failed with exit code {proc.ExitCode}: {stderr}");
-        }
-    }
 
     private static string GenerateSampleClip(string dir, string fileName, double duration = 6.0, bool hasAudio = true)
     {
@@ -160,25 +126,8 @@ public static partial class Program
 
     private static MediaProbeResult ProbeMedia(string filePath)
     {
-        string ffprobe = ResolveBundledTool("ffprobe.exe");
-        var psi = new ProcessStartInfo(ffprobe)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        psi.ArgumentList.Add("-v"); psi.ArgumentList.Add("error");
-        psi.ArgumentList.Add("-show_entries"); psi.ArgumentList.Add("format=duration");
-        psi.ArgumentList.Add("-show_entries"); psi.ArgumentList.Add("stream=index,codec_name,codec_type");
-        psi.ArgumentList.Add("-of"); psi.ArgumentList.Add("json");
-        psi.ArgumentList.Add(filePath);
-
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start ffprobe");
-        string json = proc.StandardOutput.ReadToEnd();
-        string stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit(5000);
-        if (proc.ExitCode != 0) throw new InvalidOperationException($"ffprobe failed: {stderr}");
+        string json = RunForOutput(ResolveBundledTool("ffprobe.exe"),
+            ["-v", "error", "-show_entries", "format=duration", "-show_entries", "stream=index,codec_name,codec_type", "-of", "json", filePath]);
 
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;

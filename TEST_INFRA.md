@@ -89,13 +89,7 @@ dotnet run --project tests/HuntReplay.E2ETests
 ```
 Expected output: 39 passed, 0 failed, exit code 0.
 
-### Method 2: Python Runner
-```powershell
-python tools/run_e2e_tests.py
-```
-Expected output: 39 passed, 0 failed, exit code 0.
-
-### Method 3: Full Solution Build & Verification
+### Method 2: Full Solution Build & Verification
 ```powershell
 dotnet build HuntReplayStudio.sln
 dotnet run --project tests/HuntReplay.Tests

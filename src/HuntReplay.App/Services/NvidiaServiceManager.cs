@@ -1,9 +1,7 @@
 using System.Diagnostics;
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
-using System.Threading;
+using System.ServiceProcess;
 using HuntReplay.Core.Localization;
 
 namespace HuntReplay.App.Services;
@@ -18,152 +16,51 @@ internal static class NvidiaServiceManager
 
     private static readonly List<string> StoppedServices = [];
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct SERVICE_STATUS
+    public static bool IsServiceRunning(string name) =>
+        WithService(name, service => service.Status is ServiceControllerStatus.Running or ServiceControllerStatus.StartPending);
+
+    public static bool StopServiceInternal(string name) => WithService(name, service =>
     {
-        public uint dwServiceType;
-        public uint dwCurrentState;
-        public uint dwControlsAccepted;
-        public uint dwWin32ExitCode;
-        public uint dwServiceSpecificExitCode;
-        public uint dwCheckPoint;
-        public uint dwWaitHint;
-    }
+        if (service.Status == ServiceControllerStatus.Stopped) return true;
+        if (service.Status != ServiceControllerStatus.StopPending)
+        {
+            try { service.Stop(); }
+            catch (InvalidOperationException)
+            {
+                // The service may have stopped on its own in the meantime; anything else is a refusal.
+                service.Refresh();
+                if (service.Status is not (ServiceControllerStatus.Stopped or ServiceControllerStatus.StopPending)) return false;
+            }
+        }
+        // Wait up to 3 seconds for the service to finish stopping cleanly.
+        try { service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(3)); }
+        catch (System.ServiceProcess.TimeoutException) { }
+        service.Refresh();
+        return service.Status is ServiceControllerStatus.Stopped or ServiceControllerStatus.StopPending;
+    });
 
-    private const uint SC_MANAGER_ALL_ACCESS = 0xF003F;
-    private const uint SERVICE_STOP = 0x0020;
-    private const uint SERVICE_START = 0x0010;
-    private const uint SERVICE_QUERY_STATUS = 0x0004;
-    private const uint SERVICE_CONTROL_STOP = 0x0001;
-    private const uint SERVICE_STOPPED = 1;
-    private const uint SERVICE_START_PENDING = 2;
-    private const uint SERVICE_STOP_PENDING = 3;
-    private const uint SERVICE_RUNNING = 4;
-
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr OpenSCManager(string? lpMachineName, string? lpDatabaseName, uint dwDesiredAccess);
-
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool ControlService(IntPtr hService, uint dwControl, ref SERVICE_STATUS lpServiceStatus);
-
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern bool StartService(IntPtr hService, uint dwNumServiceArgs, IntPtr lpServiceArgVectors);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool QueryServiceStatus(IntPtr hService, ref SERVICE_STATUS lpServiceStatus);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool CloseServiceHandle(IntPtr hSCObject);
-
-    public static bool IsServiceRunning(string name)
+    public static bool StartServiceInternal(string name) => WithService(name, service =>
     {
-        IntPtr scm = OpenSCManager(null, null, 0x0001 /* SC_MANAGER_CONNECT */);
-        if (scm == IntPtr.Zero) return false;
+        if (service.Status == ServiceControllerStatus.StopPending)
+        {
+            try { service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(5)); }
+            catch (System.ServiceProcess.TimeoutException) { }
+            service.Refresh();
+        }
+        if (service.Status is ServiceControllerStatus.Running or ServiceControllerStatus.StartPending) return true;
+        service.Start();
+        return true;
+    });
+
+    // A missing service, denied access or a refused start/stop reads as "no", as the raw SCM calls did.
+    private static bool WithService(string name, Func<ServiceController, bool> action)
+    {
         try
         {
-            IntPtr svc = OpenService(scm, name, SERVICE_QUERY_STATUS);
-            if (svc == IntPtr.Zero) return false;
-            try
-            {
-                var status = new SERVICE_STATUS();
-                return QueryServiceStatus(svc, ref status) &&
-                    (status.dwCurrentState is SERVICE_RUNNING or SERVICE_START_PENDING);
-            }
-            finally
-            {
-                CloseServiceHandle(svc);
-            }
+            using var service = new ServiceController(name);
+            return action(service);
         }
-        finally
-        {
-            CloseServiceHandle(scm);
-        }
-    }
-
-    public static bool StopServiceInternal(string name)
-    {
-        IntPtr scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
-        if (scm == IntPtr.Zero) return false;
-        try
-        {
-            IntPtr svc = OpenService(scm, name, SERVICE_STOP | SERVICE_QUERY_STATUS);
-            if (svc == IntPtr.Zero) return false;
-            try
-            {
-                var status = new SERVICE_STATUS();
-                if (!QueryServiceStatus(svc, ref status)) return false;
-                if (status.dwCurrentState == SERVICE_STOPPED) return true;
-
-                if (status.dwCurrentState != SERVICE_STOP_PENDING)
-                {
-                    if (!ControlService(svc, SERVICE_CONTROL_STOP, ref status))
-                    {
-                        if (QueryServiceStatus(svc, ref status) &&
-                            (status.dwCurrentState is SERVICE_STOPPED or SERVICE_STOP_PENDING))
-                        {
-                            // Already stopped or in the process of stopping
-                        }
-                        else
-                        {
-                            return false;
-                        }
-                    }
-                }
-
-                // Wait up to 3 seconds for service to finish stopping cleanly
-                for (int i = 0; i < 15; i++)
-                {
-                    if (!QueryServiceStatus(svc, ref status)) break;
-                    if (status.dwCurrentState == SERVICE_STOPPED) return true;
-                    Thread.Sleep(200);
-                }
-                return status.dwCurrentState is SERVICE_STOPPED or SERVICE_STOP_PENDING;
-            }
-            finally
-            {
-                CloseServiceHandle(svc);
-            }
-        }
-        finally
-        {
-            CloseServiceHandle(scm);
-        }
-    }
-
-    public static bool StartServiceInternal(string name)
-    {
-        IntPtr scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
-        if (scm == IntPtr.Zero) return false;
-        try
-        {
-            IntPtr svc = OpenService(scm, name, SERVICE_START | SERVICE_QUERY_STATUS);
-            if (svc == IntPtr.Zero) return false;
-            try
-            {
-                var status = new SERVICE_STATUS();
-                for (int i = 0; i < 25; i++)
-                {
-                    if (!QueryServiceStatus(svc, ref status)) break;
-                    if (status.dwCurrentState is SERVICE_RUNNING or SERVICE_START_PENDING)
-                        return true;
-                    if (status.dwCurrentState != SERVICE_STOP_PENDING)
-                        break;
-                    Thread.Sleep(200);
-                }
-                return StartService(svc, 0, IntPtr.Zero);
-            }
-            finally
-            {
-                CloseServiceHandle(svc);
-            }
-        }
-        finally
-        {
-            CloseServiceHandle(scm);
-        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { return false; }
     }
 
     public static void StopResidualProcesses(StudioLog? log = null)

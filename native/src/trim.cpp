@@ -272,6 +272,7 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
     };
     std::deque<QueuedAudioPacket> audio_queue;
     Sws sws_ctx;
+    Frame converted_frame; // Pixel-format conversion target, allocated once per output size.
 
     auto packet = make_packet();
     auto dec_frame = make_frame();
@@ -366,7 +367,6 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
         }
 
         AVFrame* frame_to_send = frame;
-        Frame converted_frame;
         if (frame->format != enc_ctx->pix_fmt ||
             frame->width != enc_ctx->width ||
             frame->height != enc_ctx->height) {
@@ -377,11 +377,16 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
                 SWS_BILINEAR, nullptr, nullptr, nullptr));
             if (!sws_ctx) throw std::bad_alloc();
 
-            converted_frame = make_frame();
-            converted_frame->format = enc_ctx->pix_fmt;
-            converted_frame->width = enc_ctx->width;
-            converted_frame->height = enc_ctx->height;
-            avcheck(av_frame_get_buffer(converted_frame.get(), 32), "Allocate converted frame buffer");
+            if (!converted_frame) {
+                converted_frame = make_frame();
+                converted_frame->format = enc_ctx->pix_fmt;
+                converted_frame->width = enc_ctx->width;
+                converted_frame->height = enc_ctx->height;
+                avcheck(av_frame_get_buffer(converted_frame.get(), 32), "Allocate converted frame buffer");
+            } else {
+                // The encoder may still reference the previous picture; this copies only in that case.
+                avcheck(av_frame_make_writable(converted_frame.get()), "Reuse converted frame buffer");
+            }
             sws_scale(sws_ctx.get(), frame->data, frame->linesize, 0, frame->height,
                       converted_frame->data, converted_frame->linesize);
             frame_to_send = converted_frame.get();

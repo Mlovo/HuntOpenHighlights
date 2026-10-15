@@ -28,62 +28,7 @@ public static class RangeSliderStressTests
     {
         if (sliderType != null) return sliderType;
 
-        string current = AppContext.BaseDirectory;
-        string? root = null;
-        var dir = new DirectoryInfo(current);
-        while (dir != null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "HuntReplayStudio.sln")))
-            {
-                root = dir.FullName;
-                break;
-            }
-            dir = dir.Parent;
-        }
-
-        if (root == null) throw new InvalidOperationException("Could not find repository root containing HuntReplayStudio.sln");
-
-        string[] candidates = [
-            Path.Combine(root, "src", "HuntReplay.App", "bin", "x64", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
-            Path.Combine(root, "src", "HuntReplay.App", "bin", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
-            Path.Combine(root, "src", "HuntReplay.App", "bin", "Release", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
-            Path.Combine(root, "src", "HuntReplay.App", "bin", "x64", "Release", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll")
-        ];
-
-        string? found = candidates.FirstOrDefault(File.Exists);
-        if (found == null)
-        {
-            var appBin = Path.Combine(root, "src", "HuntReplay.App", "bin");
-            if (Directory.Exists(appBin))
-            {
-                var files = Directory.GetFiles(appBin, "HuntReplayStudio.dll", SearchOption.AllDirectories);
-                found = files.FirstOrDefault();
-            }
-        }
-
-        if (found == null)
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo("dotnet", $"build \"{Path.Combine(root, "src", "HuntReplay.App")}\" -c Release")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            var proc = System.Diagnostics.Process.Start(psi);
-            proc?.WaitForExit();
-            found = candidates.FirstOrDefault(File.Exists);
-            if (found == null)
-            {
-                var appBin = Path.Combine(root, "src", "HuntReplay.App", "bin");
-                if (Directory.Exists(appBin))
-                {
-                    found = Directory.GetFiles(appBin, "HuntReplayStudio.dll", SearchOption.AllDirectories).FirstOrDefault();
-                }
-            }
-        }
-
-        if (found == null) throw new FileNotFoundException("HuntReplayStudio.dll could not be located in any bin output directory.");
-
-        var asm = Assembly.LoadFrom(found);
+        var asm = AppUnderTest.Load();
         sliderType = asm.GetType("HuntReplay.App.Controls.RangeSlider")
             ?? throw new InvalidOperationException("Type HuntReplay.App.Controls.RangeSlider not found in assembly.");
 

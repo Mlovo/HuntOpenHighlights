@@ -121,6 +121,7 @@ class VideoEncoder {
     void rebuild_processor(int width, int height);
 public:
     Codec codec;
+    Packet drained = make_packet(); // Reused by drain() for every encoded video frame.
     int encoder = 0;
     std::wstring description;
     VideoEncoder(D3D& device, hr_config config, Emit callback);

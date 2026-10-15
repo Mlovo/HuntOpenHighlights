@@ -34,24 +34,10 @@ $Signature = Get-AuthenticodeSignature 'bin/MessageBus.dll'
 if ($Signature.Status -ne 'Valid' -or $Signature.SignerCertificate.Subject -notmatch 'NVIDIA Corporation') {
     throw "MessageBus.dll signature check failed: $($Signature.Status). No unsigned replacement will be embedded."
 }
-if (!$SkipTests) {
-    Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.Tests','--configuration',$Configuration)
-    Invoke-Checked 'dotnet' @('build','src/HuntReplay.App','--configuration',$Configuration)
-    Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.WindowsTests','--configuration',$Configuration)
-}
 & (Join-Path $PSScriptRoot 'PrepareFFmpeg.ps1') -ArchivePath $FFmpegArchive -Offline:$Offline
-$CmakeGenerator = if ($env:GITHUB_ACTIONS -eq 'true') { 'Visual Studio 17 2022' } else { 'Visual Studio 18 2026' }
-try {
-    Invoke-Checked 'cmake' @('-S','native','-B','artifacts/native','-G',$CmakeGenerator,'-A','x64',"-DFFMPEG_ROOT=$Root/native/vendor/ffmpeg")
-} catch {
-    if ($CmakeGenerator -eq 'Visual Studio 18 2026') {
-        if (Test-Path 'artifacts/native') { Remove-Item -LiteralPath 'artifacts/native' -Recurse -Force }
-        Invoke-Checked 'cmake' @('-S','native','-B','artifacts/native','-G','Visual Studio 17 2022','-A','x64',"-DFFMPEG_ROOT=$Root/native/vendor/ffmpeg")
-    } else {
-        throw
-    }
-}
-Invoke-Checked 'cmake' @('--build','artifacts/native','--config',$Configuration,'--parallel','4')
+# Without -G, CMake reuses the generator of an existing build tree or picks the newest Visual Studio installed.
+Invoke-Checked 'cmake' @('-S','native','-B','artifacts/native','-A','x64',"-DFFMPEG_ROOT=$Root/native/vendor/ffmpeg")
+Invoke-Checked 'cmake' @('--build','artifacts/native','--config',$Configuration,'--parallel')
 $Runtime = Join-Path $Root 'artifacts/runtime'
 if (Test-Path $Runtime) { Remove-Item -LiteralPath $Runtime -Recurse -Force }
 New-Item $Runtime -ItemType Directory -Force | Out-Null
@@ -62,15 +48,20 @@ $Manifest = Get-ChildItem $Runtime -Filter '*.dll' | Sort-Object Name | ForEach-
 }
 # ASCII without BOM. This manifest and every DLL are embedded resources, not sidecar dependencies.
 $Manifest | Set-Content (Join-Path $Runtime 'native.sha256') -Encoding Ascii
+Invoke-Checked 'dotnet' @('build','src/HuntReplay.App','--configuration',$Configuration)
+# Tests run against the runtime built above, never a previous build's DLL.
+if (!$SkipTests) {
+    Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.Tests','--configuration',$Configuration)
+    Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.WindowsTests','--configuration',$Configuration)
+}
 if ($NoPublish) {
-    Invoke-Checked 'dotnet' @('build','src/HuntReplay.App','--configuration',$Configuration)
     Write-Host 'Build complete (no portable executable requested).'
     exit 0
 }
 $Publish = Join-Path $Root 'artifacts/publish'
 New-Item $Publish -ItemType Directory -Force | Out-Null
-Invoke-Checked 'dotnet' @('publish','src/HuntReplay.App','--configuration',$Configuration,'--runtime','win-x64','--self-contained','true',
-    '-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=true','-p:EnableCompressionInSingleFile=true','-p:DebugType=embedded','--output',$Publish)
+# Single-file, self-contained and compression settings live in HuntReplay.App.csproj.
+Invoke-Checked 'dotnet' @('publish','src/HuntReplay.App','--configuration',$Configuration,'-p:DebugType=embedded','--output',$Publish)
 Copy-Item 'LICENSE','THIRD_PARTY_NOTICES.md' $Publish
 $Licenses = Join-Path $Publish 'licenses'
 New-Item $Licenses -ItemType Directory -Force | Out-Null

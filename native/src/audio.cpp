@@ -168,15 +168,15 @@ struct AudioCapture::Impl {
         output_id = source.output_device ? source.output_device : L"";
         microphone_id = source.microphone_device ? source.microphone_device : L"";
     }
+    Packet drained = make_packet(); // Reused by drain() for every AAC frame of every track.
     void drain(int index, bool flush = false) {
         auto* codec = owner.codecs[index].get();
         if (flush) avcheck(avcodec_send_frame(codec, nullptr), "Flush audio encoder");
-        auto packet = make_packet();
         for (;;) {
-            int result = avcodec_receive_packet(codec, packet.get());
+            int result = avcodec_receive_packet(codec, drained.get());
             if (result == AVERROR(EAGAIN) || result == AVERROR_EOF) break;
             avcheck(result, "Receive AAC packet");
-            emit(index + 1, packet.get(), codec->time_base); av_packet_unref(packet.get());
+            emit(index + 1, drained.get(), codec->time_base); av_packet_unref(drained.get());
         }
     }
     void run(std::stop_token stop) {
@@ -205,21 +205,28 @@ struct AudioCapture::Impl {
                 if (changed) throw std::runtime_error("Default audio endpoint changed; restart buffer to use the new device.");
             };
             auto next_device_check = Clock::now() + std::chrono::seconds(1);
+            // One PCM frame per track, allocated once. av_frame_make_writable only copies if the encoder still holds it.
+            std::vector<Frame> pcm;
+            for (const auto& codec : owner.codecs) {
+                auto& frame = pcm.emplace_back(make_frame());
+                frame->nb_samples = frame_samples; frame->sample_rate = rate; frame->format = codec->sample_fmt;
+                avcheck(av_channel_layout_copy(&frame->ch_layout, &codec->ch_layout), "Copy AAC channel layout");
+                avcheck(av_frame_get_buffer(frame.get(), 0), "Allocate AAC samples");
+            }
             auto encode_until = [&](int64_t limit) {
                 while (cursor + frame_samples <= limit) {
                     for (int i = 0; i < static_cast<int>(owner.codecs.size()); ++i) {
-                        auto frame = make_frame(); auto* codec = owner.codecs[i].get();
-                        frame->nb_samples = frame_samples; frame->sample_rate = rate; frame->format = codec->sample_fmt;
-                        avcheck(av_channel_layout_copy(&frame->ch_layout, &codec->ch_layout), "Copy AAC channel layout");
-                        frame->pts = cursor; avcheck(av_frame_get_buffer(frame.get(), 0), "Allocate AAC samples");
+                        auto* frame = pcm[i].get(); auto* codec = owner.codecs[i].get();
+                        avcheck(av_frame_make_writable(frame), "Reuse AAC frame");
+                        frame->pts = cursor;
                         for (int s = 0; s < frame_samples; ++s) for (int channel = 0; channel < 2; ++channel) {
                             float g = game.timeline.get(cursor + s, channel);
                             float m = mic ? mic->timeline.get(cursor + s, channel) * config.microphone_gain : 0;
                             float value = config.separate_microphone ? (i == 0 ? g : m) : g + m;
                             reinterpret_cast<float*>(frame->data[channel])[s] = std::clamp(value, -1.f, 1.f);
                         }
-                        int result = avcodec_send_frame(codec, frame.get());
-                        if (result == AVERROR(EAGAIN)) { drain(i); result = avcodec_send_frame(codec, frame.get()); }
+                        int result = avcodec_send_frame(codec, frame);
+                        if (result == AVERROR(EAGAIN)) { drain(i); result = avcodec_send_frame(codec, frame); }
                         avcheck(result, "Encode AAC"); drain(i);
                     }
                     cursor += frame_samples;

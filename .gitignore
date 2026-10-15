@@ -1,34 +1,30 @@
-__pycache__/
-*.py[cod]
-*$py.class
-*.log
-.venv/
-env/
-venv/
-*.tmp
-
-# HuntReplay Studio (.NET / native build output)
+# Build output (.NET, native, packaging)
 [Bb]in/
 [Oo]bj/
-src/**/bin/
-src/**/obj/
-tests/**/bin/
-tests/**/obj/
-!/bin/
-!/bin/MessageBus.dll
-.vs/
-.cache/
 artifacts/
-TestResults/
 native/vendor/
 native/out/
-*.user
-*.suo
+TestResults/
+*.binlog
 *.partial.mp4
 
-# Antigravity agents & customizations
+# The repository root bin/ holds only the signed NVIDIA payload that the app embeds.
+!/bin/
+/bin/*
+!/bin/MessageBus.dll
+
+# Caches and local tooling
+.cache/
+.vs/
+*.user
+*.suo
+*.log
+*.tmp
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local agent workspaces and instructions
 .agents/
 .agent/
-
-# Local agent instructions
 CLAUDE.md

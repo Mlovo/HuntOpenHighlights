@@ -47,7 +47,7 @@
         <views:SettingsView Visibility="{Binding Page, Converter={StaticResource PageVisibility}, ConverterParameter=Settings}"/>
         <views:DiagnosticsView Visibility="{Binding Page, Converter={StaticResource PageVisibility}, ConverterParameter=Diagnostics}"/>
       </Grid>
-      <Border Grid.Row="2" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="30,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis" FontSize="11" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" ToolTip="{Binding Message}"/><TextBlock Grid.Column="1" Text="WGC  /  WASAPI  /  DIRECT3D 11" Margin="20,0,0,0" FontSize="9" Foreground="#607069" VerticalAlignment="Center"/></Grid></Border>
+      <Border Grid.Row="2" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="30,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis" FontSize="11" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" ToolTip="{Binding Message}"/><TextBlock Grid.Column="1" Text="WGC  /  WASAPI  /  DIRECT3D 11" Margin="20,0,0,0" FontSize="9" Foreground="{DynamicResource FooterText}" VerticalAlignment="Center"/></Grid></Border>
     </Grid>
   </Grid>
 </Window>

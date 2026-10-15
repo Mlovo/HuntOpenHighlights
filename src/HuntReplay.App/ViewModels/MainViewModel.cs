@@ -391,9 +391,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 // Process snapshots enumerate every process on the machine; probe on the thread pool, not the UI thread.
                 int probePid = (int)pipe.Games.FirstOrDefault().Pid;
-                var probedWindow = GameWindow.Find(probePid);
-                bool probedRunning = probedWindow != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(probePid);
-                nvidiaActive = !pipe.IsListening && SelfInstaller.IsNvidiaActive();
+                var processes = ProcessSnapshot.Take();
+                var probedWindow = GameWindow.Find(processes, probePid);
+                bool probedRunning = probedWindow != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(processes, probePid);
+                nvidiaActive = !pipe.IsListening && processes.Has("nvcontainer");
                 // All automation state and user operations are serialized on the UI dispatcher.
                 await dispatcher.InvokeAsync(async () =>
                 {
@@ -405,52 +406,39 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
                         if (window != lastGameWindow) { userPaused = false; retryCount = 0; nextRetry = 0; }
                         var previous = lastGameWindow; lastGameWindow = window;
+                        // One status and settings read per pass; StopAsync below is the only thing that changes them here.
+                        var settings = recorder.Settings;
                         var current = recorder.Status;
-                        if (!current.Running && current.Native.ElapsedUs > 0)
+                        bool running = current.Running;
+                        if (!running && current.Native.ElapsedUs > 0)
                         {
                             await recorder.StopAsync();
-                            if (gameRunning || recorder.Settings.Video.Source == CaptureSource.Monitor) retryCount++;
+                            if (gameRunning || settings.Video.Source == CaptureSource.Monitor) retryCount++;
                             nextRetry = Environment.TickCount64 + 5000;
                         }
 
-                        // When capturing game window directly, stop if the window disappeared or changed.
-                        // When capturing monitor, keep running as long as the game process is running!
-                        if (recorder.Settings.Video.Source == CaptureSource.HuntWindow)
+                        // Game window capture stops when the window disappears (auto mode) or is replaced.
+                        // Monitor capture keeps running for as long as the game process runs.
+                        bool autoStop = settings.System.AutoBufferWithGame && !manuallyStarted;
+                        bool stopForSource = running && (settings.Video.Source == CaptureSource.HuntWindow
+                            ? previous != IntPtr.Zero && (window == IntPtr.Zero ? autoStop : previous != window)
+                            : autoStop && !gameRunning);
+                        if (stopForSource)
                         {
-                            if (previous != IntPtr.Zero && window == IntPtr.Zero && recorder.Status.Running)
-                            {
-                                if (recorder.Settings.System.AutoBufferWithGame && !manuallyStarted)
-                                {
-                                    await recorder.StopAsync();
-                                    manuallyStarted = false;
-                                }
-                            }
-                            else if (previous != IntPtr.Zero && window != IntPtr.Zero && previous != window && recorder.Status.Running)
-                            {
-                                await recorder.StopAsync();
-                            }
-                        }
-                        else if (recorder.Settings.Video.Source == CaptureSource.Monitor)
-                        {
-                            if (recorder.Settings.System.AutoBufferWithGame && !manuallyStarted)
-                            {
-                                if (!gameRunning && recorder.Status.Running)
-                                {
-                                    await recorder.StopAsync();
-                                }
-                            }
+                            await recorder.StopAsync();
+                            running = false;
                         }
 
-                        bool sourceAvailable = recorder.Settings.Video.Source == CaptureSource.Monitor || window != IntPtr.Zero;
-                        bool wanted = manuallyStarted || (recorder.Settings.System.AutoBufferWithGame && gameRunning);
-                        if (wanted && sourceAvailable && !userPaused && !recorder.Status.Running && retryCount < 3 && Environment.TickCount64 >= nextRetry)
+                        bool sourceAvailable = settings.Video.Source == CaptureSource.Monitor || window != IntPtr.Zero;
+                        bool wanted = manuallyStarted || (settings.System.AutoBufferWithGame && gameRunning);
+                        if (wanted && sourceAvailable && !userPaused && !running && retryCount < 3 && Environment.TickCount64 >= nextRetry)
                         {
                             Busy = true;
-                            try { await StartCurrentAsync(); }
+                            try { await StartCurrentAsync(); running = recorder.Status.Running; }
                             catch (Exception ex) { retryCount++; nextRetry = Environment.TickCount64 + retryCount * 15000; Error(ex); }
                             finally { Busy = false; }
                         }
-                        if (retryCount >= 3 && wanted && !recorder.Status.Running)
+                        if (retryCount >= 3 && wanted && !running)
                             Message = Loc["Status.AutoRetryStopped"];
                         RefreshStatus();
                     }
@@ -505,7 +493,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             Message = Loc["Settings.Saved"];
             retryCount = 0; nextRetry = 0; userPaused = false;
             int pid = (int)pipe.Games.FirstOrDefault().Pid;
-            bool gameActive = GameWindow.Find(pid) != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(pid);
+            var processes = ProcessSnapshot.Take();
+            bool gameActive = GameWindow.Find(processes, pid) != IntPtr.Zero || pipe.Games.Count > 0 || GameWindow.HasGameProcess(processes, pid);
             bool shouldRun = wasRunning || (updated.System.AutoBufferWithGame && gameActive);
             if (shouldRun)
             {
@@ -747,28 +736,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         _ = ReloadDevicesAsync();
         customMessage = null;
         customDiagnostics = null;
-        Notify(nameof(Message));
-        Notify(nameof(Diagnostics));
-        Notify(nameof(SelectedEventLabel));
-        Notify(nameof(Loc));
-        Notify(nameof(LanguageButtonLabel));
-        Notify(nameof(PageTitle));
-        Notify(nameof(GameStatus));
-        Notify(nameof(BufferStatus));
-        Notify(nameof(MemoryText));
-        Notify(nameof(GpuStatus));
-        Notify(nameof(EncodingModeLabel));
-        Notify(nameof(VideoStatus));
-        Notify(nameof(CaptureDetail));
-        Notify(nameof(PendingText));
-        Notify(nameof(ToggleLabel));
-        Notify(nameof(ManualLabel));
-        Notify(nameof(SetupLabel));
-        Notify(nameof(PipeLabel));
-        Notify(nameof(LibrarySummary));
-        Notify(nameof(UpdateButtonLabel));
-        Notify(nameof(UpdateStatusLabel));
-        Notify(nameof(ThemeButtonLabel));
+        // Language affects almost every computed label; an empty name refreshes all bindings on this view model.
+        Notify(string.Empty);
         FilteredClips.Refresh();
     }
 

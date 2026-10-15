@@ -22,6 +22,7 @@
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
     <ProjectReference Include="../HuntReplay.Core/HuntReplay.Core.csproj" />
     <ProjectReference Include="../HuntReplay.Protocol/HuntReplay.Protocol.csproj" />
     <EmbeddedResource Include="../../bin/MessageBus.dll" LogicalName="HuntReplay.Payload.MessageBus.dll" />

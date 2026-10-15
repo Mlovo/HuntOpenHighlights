@@ -285,6 +285,9 @@ struct PlayerImpl {
 
     void worker_loop() {
         Apartment apartment;
+        // Reused for every packet; avcodec_receive_frame unreferences the frame before filling it.
+        auto packet = make_packet();
+        auto frame = make_frame();
         while (!stop_worker) {
             if (!playing && !seek_requested) {
                 std::unique_lock<std::mutex> lock(cv_mutex);
@@ -301,7 +304,6 @@ struct PlayerImpl {
                 continue;
             }
 
-            auto packet = make_packet();
             int ret = av_read_frame(format, packet.get());
             if (ret < 0) {
                 if (ret == AVERROR_EOF) {
@@ -315,7 +317,6 @@ struct PlayerImpl {
 
             if (packet->stream_index == video_stream_idx) {
                 if (avcodec_send_packet(video_codec.get(), packet.get()) >= 0) {
-                    auto frame = make_frame();
                     while (avcodec_receive_frame(video_codec.get(), frame.get()) >= 0) {
                         AVRational tb = format->streams[video_stream_idx]->time_base;
                         double pts = 0.0;
@@ -341,7 +342,6 @@ struct PlayerImpl {
                 }
             } else if (packet->stream_index == audio_stream_idx && audio_codec && audio_playback && audio_playback->ready) {
                 if (avcodec_send_packet(audio_codec.get(), packet.get()) >= 0) {
-                    auto frame = make_frame();
                     while (avcodec_receive_frame(audio_codec.get(), frame.get()) >= 0) {
                         if (playing) {
                             audio_playback->write(frame.get());

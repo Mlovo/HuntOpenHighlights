@@ -5,6 +5,8 @@
     <ProjectReference Include="../../src/HuntReplay.Protocol/HuntReplay.Protocol.csproj" />
     <Content Include="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- Pure production view-model and label code; WPF-dependent files stay out of this Linux suite. -->
+    <!-- Process and ffmpeg helpers shared by the media suites. -->
+    <Compile Include="../Shared/MediaTestKit.cs" Link="Shared/MediaTestKit.cs" />
     <Compile Include="../../src/HuntReplay.App/Interop/DeviceOption.cs" Link="Production/DeviceOption.cs" />
     <Compile Include="../../src/HuntReplay.App/ViewModels/ObservableObject.cs" Link="Production/ObservableObject.cs" />
     <Compile Include="../../src/HuntReplay.App/ViewModels/DeviceSelectionViewModel.cs" Link="Production/DeviceSelectionViewModel.cs" />

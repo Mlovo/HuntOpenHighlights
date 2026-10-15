@@ -1,0 +1,43 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+  <!-- Dark palette. Every key here must exist in the other palette too. -->
+  <SolidColorBrush x:Key="Background" Color="#0C1013"/>
+  <SolidColorBrush x:Key="Surface" Color="#13191D"/>
+  <SolidColorBrush x:Key="SurfaceRaised" Color="#192126"/>
+  <SolidColorBrush x:Key="Border" Color="#293237"/>
+  <SolidColorBrush x:Key="Text" Color="#EBEFE9"/>
+  <SolidColorBrush x:Key="Muted" Color="#92A09D"/>
+  <SolidColorBrush x:Key="Accent" Color="#CCDF92"/>
+  <SolidColorBrush x:Key="AccentDark" Color="#1A2216"/>
+  <SolidColorBrush x:Key="Warning" Color="#D5B582"/>
+  <LinearGradientBrush x:Key="HeroBackground" StartPoint="0,0" EndPoint="1,1">
+    <GradientStop Color="#222D22"/>
+    <GradientStop Color="#18201C" Offset="0.55"/>
+    <GradientStop Color="#111819" Offset="1"/>
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="PlayerBackground" Color="#080C0E"/>
+  <SolidColorBrush x:Key="PlayerPlaceholder" Color="#080C0E"/>
+  <SolidColorBrush x:Key="HeroBorder" Color="#394532"/>
+  <SolidColorBrush x:Key="HeroCurves" Color="#5E714F"/>
+  <SolidColorBrush x:Key="HeroAccentText" Color="#ACBF89"/>
+  <!-- Control states -->
+  <SolidColorBrush x:Key="FooterText" Color="#607069"/>
+  <SolidColorBrush x:Key="ButtonHoverBackground" Color="#202A22"/>
+  <SolidColorBrush x:Key="NavSelectedBackground" Color="#20291D"/>
+  <SolidColorBrush x:Key="NavSelectedBorder" Color="#39432E"/>
+  <SolidColorBrush x:Key="ControlBackground" Color="#101619"/>
+  <SolidColorBrush x:Key="SelectionBackground" Color="#4F603B"/>
+  <SolidColorBrush x:Key="ListItemHighlight" Color="#2A3526"/>
+  <SolidColorBrush x:Key="PopupBackground" Color="#192126"/>
+  <SolidColorBrush x:Key="CheckBoxBorder" Color="#506047"/>
+  <SolidColorBrush x:Key="CheckMarkForeground" Color="#182018"/>
+  <SolidColorBrush x:Key="FocusOutline" Color="#FFFFFF"/>
+  <SolidColorBrush x:Key="SliderThumbActive" Color="#E2F1B2"/>
+  <SolidColorBrush x:Key="SliderTrack" Color="#263137"/>
+  <SolidColorBrush x:Key="ProgressTrack" Color="#2B342C"/>
+  <SolidColorBrush x:Key="TabHoverBackground" Color="#222C33"/>
+  <SolidColorBrush x:Key="TabHoverBorder" Color="#3F4F57"/>
+  <SolidColorBrush x:Key="TabSelectedHoverBackground" Color="#283524"/>
+  <SolidColorBrush x:Key="ScrollThumb" Color="#2E3A40"/>
+  <SolidColorBrush x:Key="ScrollThumbHover" Color="#43535B"/>
+  <sys:Double x:Key="ThumbShadowOpacity">0.45</sys:Double>
+</ResourceDictionary>

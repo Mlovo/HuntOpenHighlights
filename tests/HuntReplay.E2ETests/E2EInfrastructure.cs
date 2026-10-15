@@ -18,6 +18,8 @@ using System.Windows.Controls;
 using System.Windows.Markup;
 using System.Windows.Threading;
 
+using HuntReplay.TestShared;
+
 namespace HuntReplay.E2ETests;
 
 public static class E2EInfrastructure
@@ -47,12 +49,7 @@ public static class E2EInfrastructure
         }
     }
 
-    public static string ResolveBundledTool(string toolName)
-    {
-        string tool = Path.Combine(RepoRoot, "native", "vendor", "ffmpeg", "bin", toolName);
-        if (File.Exists(tool)) return tool;
-        throw new FileNotFoundException($"Bundled FFmpeg tool '{toolName}' not found at: {tool}");
-    }
+    public static string ResolveBundledTool(string toolName) => MediaTestKit.ResolveBundledTool(toolName);
 
     public static string ResolveNativeDll()
     {
@@ -138,23 +135,8 @@ public static class E2EInfrastructure
         public static extern void hr_free(IntPtr memory);
     }
 
-    public static void RunProcess(string exePath, string arguments, int timeoutMs = 30000)
-    {
-        var psi = new ProcessStartInfo(exePath, arguments)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {exePath}");
-        string stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit(timeoutMs);
-        if (proc.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"{Path.GetFileName(exePath)} failed with exit code {proc.ExitCode}: {stderr}");
-        }
-    }
+    public static void RunProcess(string exePath, string arguments, int timeoutMs = 30000) =>
+        MediaTestKit.RunProcess(exePath, arguments, timeoutMs);
 
     public static string GenerateSampleClip(string dir, string fileName, double duration = 6.0, bool hasAudio = true)
     {
@@ -226,25 +208,8 @@ public static class E2EInfrastructure
 
     public static MediaProbeResult ProbeMedia(string filePath)
     {
-        string ffprobe = ResolveBundledTool("ffprobe.exe");
-        var psi = new ProcessStartInfo(ffprobe)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        psi.ArgumentList.Add("-v"); psi.ArgumentList.Add("error");
-        psi.ArgumentList.Add("-show_entries"); psi.ArgumentList.Add("format=duration");
-        psi.ArgumentList.Add("-show_entries"); psi.ArgumentList.Add("stream=index,codec_name,codec_type,sample_rate,channels,time_base");
-        psi.ArgumentList.Add("-of"); psi.ArgumentList.Add("json");
-        psi.ArgumentList.Add(filePath);
-
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start ffprobe");
-        string json = proc.StandardOutput.ReadToEnd();
-        string stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit(10000);
-        if (proc.ExitCode != 0) throw new InvalidOperationException($"ffprobe failed: {stderr}");
+        string json = MediaTestKit.RunForOutput(ResolveBundledTool("ffprobe.exe"),
+            ["-v", "error", "-show_entries", "format=duration", "-show_entries", "stream=index,codec_name,codec_type,sample_rate,channels,time_base", "-of", "json", filePath], 10000);
 
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -275,24 +240,8 @@ public static class E2EInfrastructure
 
     public static List<PacketInfo> ReadPackets(string filePath, string streamSpec)
     {
-        string ffprobe = ResolveBundledTool("ffprobe.exe");
-        var psi = new ProcessStartInfo(ffprobe)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        psi.ArgumentList.Add("-v"); psi.ArgumentList.Add("error");
-        psi.ArgumentList.Add("-select_streams"); psi.ArgumentList.Add(streamSpec);
-        psi.ArgumentList.Add("-show_packets");
-        psi.ArgumentList.Add("-show_entries"); psi.ArgumentList.Add("packet=pts_time,dts_time,duration_time");
-        psi.ArgumentList.Add("-of"); psi.ArgumentList.Add("json");
-        psi.ArgumentList.Add(filePath);
-
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Failed to run ffprobe packets");
-        string json = proc.StandardOutput.ReadToEnd();
-        proc.WaitForExit(20000);
+        string json = MediaTestKit.RunForOutput(ResolveBundledTool("ffprobe.exe"),
+            ["-v", "error", "-select_streams", streamSpec, "-show_packets", "-show_entries", "packet=pts_time,dts_time,duration_time", "-of", "json", filePath], 20000);
 
         using var doc = JsonDocument.Parse(json);
         var packets = new List<PacketInfo>();
@@ -358,12 +307,15 @@ public static class E2EInfrastructure
 
     public static ResourceDictionary LoadProductionTheme()
     {
-        string themePath = Path.Combine(RepoRoot, "src", "HuntReplay.App", "Themes", "Dark.xaml");
-        string xaml = File.ReadAllText(themePath).Replace(
+        string themes = Path.Combine(RepoRoot, "src", "HuntReplay.App", "Themes");
+        ResourceDictionary Parse(string file) => (ResourceDictionary)XamlReader.Parse(File.ReadAllText(Path.Combine(themes, file)).Replace(
             "clr-namespace:HuntReplay.App.Views\"",
             "clr-namespace:HuntReplay.App.Views;assembly=HuntReplay.E2ETests\"",
-            StringComparison.Ordinal);
-        return (ResourceDictionary)XamlReader.Parse(xaml);
+            StringComparison.Ordinal));
+        var theme = new ResourceDictionary();
+        theme.MergedDictionaries.Add(Parse("Palette.Dark.xaml"));
+        theme.MergedDictionaries.Add(Parse("Controls.xaml"));
+        return theme;
     }
 
     public static void WithThemedWindow(Action<Window, StackPanel> test)

@@ -129,9 +129,8 @@ internal sealed class NativeCaptureEngine : IDisposable
         NativeMethods.Check(NativeMethods.hr_thumbnail(video, 640, out var pixels, out var width, out var height, out var stride));
         try
         {
-            var bytes = new byte[checked(stride * height)];
-            Marshal.Copy(pixels, bytes, 0, bytes.Length);
-            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, bytes, stride);
+            // Reads straight from the native buffer: one copy instead of native -> byte[] -> bitmap.
+            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, checked(stride * height), stride);
             bitmap.Freeze();
             var encoder = new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(bitmap));

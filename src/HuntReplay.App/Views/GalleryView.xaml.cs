@@ -65,36 +65,18 @@ public partial class GalleryView : UserControl
         NativeMethods.hr_player_get_state(playerHandle, out int isPlaying, out int isEnded, out double currentPts);
         if (isEnded == 1)
         {
-            playing = false;
-            PlayButton.Content = "▶";
-            if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
-            if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
+            ShowPaused();
             timer.Stop();
         }
         if (isPlaying == 1)
         {
-            bitmap.Lock();
-            try
-            {
-                NativeMethods.hr_player_read_frame(playerHandle, bitmap.BackBuffer, bitmap.BackBufferStride, videoWidth, videoHeight, out int updated, out _);
-                if (updated == 1)
-                {
-                    bitmap.AddDirtyRect(new Int32Rect(0, 0, videoWidth, videoHeight));
-                }
-            }
-            finally
-            {
-                bitmap.Unlock();
-            }
+            CopyLatestFrame(playerHandle);
 
             if (isTrimMode)
             {
                 if (isPreviewingFragment && currentPts >= trimEnd)
                 {
-                    playing = false;
-                    PlayButton.Content = "▶";
-                    if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
-                    if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
+                    ShowPaused();
                     NativeMethods.hr_player_pause(playerHandle);
                     timer.Stop();
                     isPreviewingFragment = false;
@@ -237,19 +219,7 @@ public partial class GalleryView : UserControl
             bitmap = new WriteableBitmap(videoWidth, videoHeight, 96, 96, PixelFormats.Bgra32, null);
             PlayerImage.Source = bitmap;
 
-            bitmap.Lock();
-            try
-            {
-                NativeMethods.hr_player_read_frame(opened, bitmap.BackBuffer, bitmap.BackBufferStride, videoWidth, videoHeight, out int updated, out _);
-                if (updated == 1)
-                {
-                    bitmap.AddDirtyRect(new Int32Rect(0, 0, videoWidth, videoHeight));
-                }
-            }
-            finally
-            {
-                bitmap.Unlock();
-            }
+            CopyLatestFrame(opened);
 
             PlayerHint.Visibility = Visibility.Collapsed;
             PlayButton.IsEnabled = true;
@@ -286,38 +256,12 @@ public partial class GalleryView : UserControl
                 if (token.IsCancellationRequested) break;
                 int secKey = (int)Math.Round(s);
                 if (previewCache.ContainsKey(secKey)) continue;
-
-                IntPtr pixels = IntPtr.Zero;
-                int w = 0, h = 0, stride = 0;
-                int res = -1;
-
-                lock (playerLock)
+                if (playerHandle != handle) break; // Another clip took over; RenderPreview re-checks under the lock.
+                if (RenderPreview(handle, s, token) is not { } bmp) continue;
+                Dispatcher.BeginInvoke(() =>
                 {
-                    if (token.IsCancellationRequested || playerHandle != handle || handle == IntPtr.Zero) break;
-                    res = NativeMethods.hr_player_preview(handle, s, 192, out pixels, out w, out h, out stride);
-                }
-
-                if (res == 0 && pixels != IntPtr.Zero)
-                {
-                    try
-                    {
-                        var bytes = new byte[checked(stride * h)];
-                        Marshal.Copy(pixels, bytes, 0, bytes.Length);
-                        var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, bytes, stride);
-                        bmp.Freeze();
-                        Dispatcher.BeginInvoke(() =>
-                        {
-                            if (!token.IsCancellationRequested && playerHandle == handle)
-                            {
-                                previewCache[secKey] = bmp;
-                            }
-                        });
-                    }
-                    finally
-                    {
-                        NativeMethods.hr_free(pixels);
-                    }
-                }
+                    if (!token.IsCancellationRequested && playerHandle == handle) previewCache[secKey] = bmp;
+                });
             }
         }, token);
     }
@@ -435,49 +379,16 @@ public partial class GalleryView : UserControl
 
         Task.Run(() =>
         {
-            if (token.IsCancellationRequested) return;
-            try
+            if (RenderPreview(handle, targetSec, token) is not { } bmp) return;
+            Dispatcher.BeginInvoke(() =>
             {
-                IntPtr pixels = IntPtr.Zero;
-                int w = 0, h = 0, stride = 0;
-                int res = -1;
-
-                lock (playerLock)
-                {
-                    if (token.IsCancellationRequested || handle != playerHandle || handle == IntPtr.Zero) return;
-                    res = NativeMethods.hr_player_preview(handle, targetSec, 192, out pixels, out w, out h, out stride);
-                }
-
-                if (res == 0 && pixels != IntPtr.Zero)
-                {
-                    try
-                    {
-                        var bytes = new byte[checked(stride * h)];
-                        Marshal.Copy(pixels, bytes, 0, bytes.Length);
-                        var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, bytes, stride);
-                        bmp.Freeze();
-                        Dispatcher.BeginInvoke(() =>
-                        {
-                            if (token.IsCancellationRequested || handle != playerHandle) return;
-                            previewCache[secondKey] = bmp;
-                            if (PreviewCard.Visibility == Visibility.Visible)
-                            {
-                                var curPos = Mouse.GetPosition(Seek);
-                                double curRatio = Math.Clamp(curPos.X / Math.Max(1, Seek.ActualWidth), 0.0, 1.0);
-                                if (Math.Abs((int)Math.Round(curRatio * naturalDuration) - secondKey) <= 1)
-                                {
-                                    PreviewThumb.Source = bmp;
-                                }
-                            }
-                        });
-                    }
-                    finally
-                    {
-                        NativeMethods.hr_free(pixels);
-                    }
-                }
-            }
-            catch { }
+                if (token.IsCancellationRequested || handle != playerHandle) return;
+                previewCache[secondKey] = bmp;
+                if (PreviewCard.Visibility != Visibility.Visible) return;
+                var curPos = Mouse.GetPosition(Seek);
+                double curRatio = Math.Clamp(curPos.X / Math.Max(1, Seek.ActualWidth), 0.0, 1.0);
+                if (Math.Abs((int)Math.Round(curRatio * naturalDuration) - secondKey) <= 1) PreviewThumb.Source = bmp;
+            });
         }, token);
     }
 
@@ -516,19 +427,7 @@ public partial class GalleryView : UserControl
     private void RefreshCurrentFrame()
     {
         if (bitmap is null || playerHandle == IntPtr.Zero) return;
-        bitmap.Lock();
-        try
-        {
-            NativeMethods.hr_player_read_frame(playerHandle, bitmap.BackBuffer, bitmap.BackBufferStride, videoWidth, videoHeight, out int updated, out _);
-            if (updated == 1)
-            {
-                bitmap.AddDirtyRect(new Int32Rect(0, 0, videoWidth, videoHeight));
-            }
-        }
-        finally
-        {
-            bitmap.Unlock();
-        }
+        CopyLatestFrame(playerHandle);
 
         if (!isTrimMode)
         {
@@ -746,10 +645,7 @@ public partial class GalleryView : UserControl
 
         if (playing)
         {
-            playing = false;
-            PlayButton.Content = "▶";
-            if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
-            if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
+            ShowPaused();
             NativeMethods.hr_player_pause(playerHandle);
             timer.Stop();
         }
@@ -923,10 +819,7 @@ public partial class GalleryView : UserControl
 
     private void PauseTrimPlayback()
     {
-        playing = false;
-        PlayButton.Content = "▶";
-        if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
-        if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
+        ShowPaused();
         NativeMethods.hr_player_pause(playerHandle);
         timer.Stop();
         isPreviewingFragment = false;
@@ -1214,6 +1107,46 @@ public partial class GalleryView : UserControl
                 e.Handled = true;
                 break;
         }
+    }
+
+    private void ShowPaused()
+    {
+        playing = false;
+        PlayButton.Content = "▶";
+        if (PreviewRangeIcon is not null) PreviewRangeIcon.Text = "\uE768";
+        if (PreviewRangeText is not null) PreviewRangeText.Text = Loc["Gallery.Preview"];
+    }
+
+    private void CopyLatestFrame(IntPtr handle)
+    {
+        if (bitmap is null) return;
+        bitmap.Lock();
+        try
+        {
+            NativeMethods.hr_player_read_frame(handle, bitmap.BackBuffer, bitmap.BackBufferStride, videoWidth, videoHeight, out int updated, out _);
+            if (updated == 1) bitmap.AddDirtyRect(new Int32Rect(0, 0, videoWidth, videoHeight));
+        }
+        finally { bitmap.Unlock(); }
+    }
+
+    // Decodes one preview frame; null when the player changed or the decode failed. One copy: native buffer to bitmap.
+    private BitmapSource? RenderPreview(IntPtr handle, double seconds, CancellationToken token)
+    {
+        IntPtr pixels;
+        int w, h, stride, res;
+        lock (playerLock)
+        {
+            if (token.IsCancellationRequested || handle != playerHandle || handle == IntPtr.Zero) return null;
+            res = NativeMethods.hr_player_preview(handle, seconds, 192, out pixels, out w, out h, out stride);
+        }
+        if (res != 0 || pixels == IntPtr.Zero) return null;
+        try
+        {
+            var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, pixels, checked(stride * h), stride);
+            bmp.Freeze();
+            return bmp;
+        }
+        finally { NativeMethods.hr_free(pixels); }
     }
 
     private static LocalizationService Loc => LocalizationService.Instance;

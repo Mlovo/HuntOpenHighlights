@@ -58,21 +58,12 @@ public sealed class ThemeService : INotifyPropertyChanged
 
         void DoApply()
         {
-            var uri = new Uri(theme == AppTheme.Light
-                ? "/HuntReplayStudio;component/Themes/Light.xaml"
-                : "/HuntReplayStudio;component/Themes/Dark.xaml", UriKind.RelativeOrAbsolute);
-            var newDict = new ResourceDictionary { Source = uri };
-
+            // Only the palette changes; Controls.xaml stays merged and picks the new brushes up through DynamicResource.
+            var palette = new ResourceDictionary { Source = new Uri(
+                $"/HuntReplayStudio;component/Themes/Palette.{(theme == AppTheme.Light ? "Light" : "Dark")}.xaml", UriKind.RelativeOrAbsolute) };
             var dicts = app.Resources.MergedDictionaries;
-            for (int i = dicts.Count - 1; i >= 0; i--)
-            {
-                var src = dicts[i].Source?.OriginalString;
-                if (src != null && (src.Contains("Dark.xaml", StringComparison.OrdinalIgnoreCase) || src.Contains("Light.xaml", StringComparison.OrdinalIgnoreCase)))
-                {
-                    dicts.RemoveAt(i);
-                }
-            }
-            dicts.Add(newDict);
+            var index = dicts.ToList().FindIndex(d => d.Source?.OriginalString.Contains("Palette.", StringComparison.OrdinalIgnoreCase) == true);
+            if (index >= 0) dicts[index] = palette; else dicts.Insert(0, palette);
         }
 
         if (app.Dispatcher.CheckAccess())

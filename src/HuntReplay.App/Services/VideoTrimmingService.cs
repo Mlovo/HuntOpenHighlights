@@ -1,8 +1,3 @@
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Threading;
-using System.Threading.Tasks;
 using HuntReplay.App.Interop;
 using HuntReplay.Core.Localization;
 
@@ -56,9 +51,9 @@ public sealed class VideoTrimmingService : IVideoTrimmingService
         if (string.IsNullOrWhiteSpace(targetPath))
             throw new ArgumentException(Text.Get("Trim.TargetEmpty"), nameof(targetPath));
 
-        if (double.IsNaN(startSeconds) || double.IsInfinity(startSeconds))
+        if (!double.IsFinite(startSeconds))
             throw new ArgumentException(Text.Get("Trim.StartInvalid"), nameof(startSeconds));
-        if (double.IsNaN(endSeconds) || double.IsInfinity(endSeconds))
+        if (!double.IsFinite(endSeconds))
             throw new ArgumentException(Text.Get("Trim.EndInvalid"), nameof(endSeconds));
 
         string fullSource = Path.GetFullPath(sourcePath);

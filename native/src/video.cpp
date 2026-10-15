@@ -325,14 +325,13 @@ void VideoEncoder::encode(ID3D11Texture2D* bgra, int width, int height, int64_t 
 
 void VideoEncoder::drain(bool flush) {
     if (flush) avcheck(avcodec_send_frame(codec.get(), nullptr), "Flush video encoder");
-    auto packet = make_packet();
     for (;;) {
-        int result = avcodec_receive_packet(codec.get(), packet.get());
+        int result = avcodec_receive_packet(codec.get(), drained.get());
         if (result == AVERROR(EAGAIN) || result == AVERROR_EOF) break;
         avcheck(result, "Receive encoded video");
-        if (packet->duration <= 0) packet->duration = 1;
-        emit(0, packet.get(), codec->time_base);
-        av_packet_unref(packet.get());
+        if (drained->duration <= 0) drained->duration = 1;
+        emit(0, drained.get(), codec->time_base);
+        av_packet_unref(drained.get());
     }
 }
 }

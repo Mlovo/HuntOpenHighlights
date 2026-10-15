@@ -89,7 +89,7 @@ internal static class Program
         }
     }
 
-    // Production ComboBox templates: the theme is parsed from src/HuntReplay.App/Themes/Dark.xaml itself.
+    // Production ComboBox templates: the theme is parsed from src/HuntReplay.App/Themes (Palette.Dark.xaml + Controls.xaml).
     // Its converters live in the App's Views namespace, which this project links from the same source file.
     private static void ComboBoxPresentationTests()
     {
@@ -195,9 +195,14 @@ internal static class Program
 
     private static ResourceDictionary LoadProductionTheme([CallerFilePath] string thisFile = "")
     {
-        var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(thisFile)!, "..", "..", "src", "HuntReplay.App", "Themes", "Dark.xaml"));
-        var xaml = File.ReadAllText(path).Replace("clr-namespace:HuntReplay.App.Views\"", "clr-namespace:HuntReplay.App.Views;assembly=HuntReplay.WindowsTests\"", StringComparison.Ordinal);
-        return (ResourceDictionary)XamlReader.Parse(xaml);
+        var themes = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(thisFile)!, "..", "..", "src", "HuntReplay.App", "Themes"));
+        ResourceDictionary Parse(string file) => (ResourceDictionary)XamlReader.Parse(File.ReadAllText(Path.Combine(themes, file))
+            .Replace("clr-namespace:HuntReplay.App.Views\"", "clr-namespace:HuntReplay.App.Views;assembly=HuntReplay.WindowsTests\"", StringComparison.Ordinal));
+        // The app merges the dark palette and the shared control styles, in that order.
+        var theme = new ResourceDictionary();
+        theme.MergedDictionaries.Add(Parse("Palette.Dark.xaml"));
+        theme.MergedDictionaries.Add(Parse("Controls.xaml"));
+        return theme;
     }
 
     internal static void WithThemedWindow(Action<Window, StackPanel> test)
