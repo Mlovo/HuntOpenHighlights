@@ -247,6 +247,7 @@ internal sealed class RecorderService : IAsyncDisposable
             exportCount--;
             if (exportCount == 0) exportsIdle.TrySetResult();
         }
+        snapshot.Dispose(); // Not queued: its payload chunks may be recycled right away.
         log.Write(Text.Get("Log.QueueFull"), "WARN");
         return false;
     }
@@ -266,6 +267,7 @@ internal sealed class RecorderService : IAsyncDisposable
                 // Exclusive reservation prevents accidentally overwriting a concurrently created file.
                 using (new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
                 job.Engine.Export(job.Snapshot, temp);
+                job.Snapshot.Dispose(); // The MP4 holds the data now; free the buffer chunks before slower file work.
                 File.Move(temp, final); temp = null;
                 var clip = library.Register(final, new ClipMetadata
                 {
@@ -293,6 +295,7 @@ internal sealed class RecorderService : IAsyncDisposable
             catch (Exception ex) { log.Write(Text.Format("Log.ExportFailed", ex.Message), "ERROR"); }
             finally
             {
+                job.Snapshot.Dispose(); // Idempotent; covers a failed export.
                 if (temp is not null)
                     try { File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
                 lock (exportGate)

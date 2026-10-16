@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Developer tool: sends test highlight events to a running Studio over the real named pipe. Not shipped. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>HuntReplay.PipeSmoke</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/HuntReplay.Protocol/HuntReplay.Protocol.csproj" />
+  </ItemGroup>
+</Project>

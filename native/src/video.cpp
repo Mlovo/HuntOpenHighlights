@@ -207,9 +207,11 @@ VideoEncoder::VideoEncoder(D3D& device, hr_config config, Emit callback) : d3d(d
         codec->hw_frames_ctx = av_buffer_ref(frames.get());
     }
     AVDictionary* options = nullptr;
+    // A replay buffer is saved seconds after the fact: encoder latency is irrelevant, quality per bit is not.
+    // So the presets favour quality over latency. CBR stays, keeping RAM use per second predictable.
     if (encoder == 1) {
-        av_dict_set(&options, "usage", "lowlatency", 0);
-        av_dict_set(&options, "quality", "speed", 0);
+        av_dict_set(&options, "usage", "transcoding", 0);
+        av_dict_set(&options, "quality", "balanced", 0);
         av_dict_set(&options, "rc", "cbr", 0);
         av_dict_set(&options, "forced_idr", "1", 0);
         if (config.codec == 0) {
@@ -217,7 +219,7 @@ VideoEncoder::VideoEncoder(D3D& device, hr_config config, Emit callback) : d3d(d
         }
     } else if (encoder == 2) {
         av_dict_set(&options, "preset", "p4", 0);
-        av_dict_set(&options, "tune", "ull", 0);
+        av_dict_set(&options, "tune", "hq", 0);
         av_dict_set(&options, "rc", "cbr", 0);
         av_dict_set(&options, "forced-idr", "1", 0);
     } else if (encoder == 3) {

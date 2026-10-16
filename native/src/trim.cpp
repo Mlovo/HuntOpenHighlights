@@ -9,6 +9,58 @@ struct SwsDelete {
 };
 using Sws = std::unique_ptr<SwsContext, SwsDelete>;
 
+// The H.264 encoder for a frame-accurate cut: the first GPU encoder that opens on this machine, so a trim does
+// not load the CPU, else libx264. Every candidate takes system-memory frames; no D3D11 device is needed.
+// Quality targets the source: about its bitrate, capped at 1.5x, with an IDR on the first frame.
+static Codec open_trim_encoder(const AVCodecContext* dec, const AVStream* source, int64_t container_bitrate) {
+    struct Candidate { const char* name; AVPixelFormat format; std::vector<std::pair<const char*, const char*>> options; };
+    const Candidate candidates[] = {
+        {"h264_nvenc", AV_PIX_FMT_NV12, {{"preset", "p5"}, {"tune", "hq"}, {"rc", "vbr"}, {"forced-idr", "1"}}},
+        {"h264_amf", AV_PIX_FMT_NV12, {{"usage", "transcoding"}, {"quality", "quality"}, {"rc", "vbr_peak"}, {"forced_idr", "1"}}},
+        {"h264_qsv", AV_PIX_FMT_NV12, {{"preset", "medium"}, {"forced_idr", "1"}}},
+        {"libx264", AV_PIX_FMT_YUV420P, {{"preset", "veryfast"}, {"crf", "20"}}},
+    };
+    int64_t bitrate = source->codecpar->bit_rate > 0 ? source->codecpar->bit_rate
+        : container_bitrate > 0 ? container_bitrate : 6'000'000;
+    AVRational fps = source->avg_frame_rate.num > 0 ? source->avg_frame_rate : source->r_frame_rate;
+    if (fps.num <= 0 || fps.den <= 0) fps = AVRational{30, 1};
+    std::string tried;
+    for (const auto& candidate : candidates) {
+        const AVCodec* encoder = avcodec_find_encoder_by_name(candidate.name);
+        if (!encoder) continue;
+        Codec enc(avcodec_alloc_context3(encoder));
+        if (!enc) throw std::bad_alloc();
+        enc->width = dec->width;
+        enc->height = dec->height;
+        enc->pix_fmt = candidate.format;
+        enc->framerate = fps;
+        // Source time base keeps variable-frame-rate capture timing intact.
+        enc->time_base = source->time_base;
+        enc->max_b_frames = 0;
+        enc->gop_size = (fps.num / fps.den > 0) ? (fps.num / fps.den) : 30;
+        enc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER | AV_CODEC_FLAG_CLOSED_GOP;
+        // libx264 is driven by CRF with a VBV cap; the GPU encoders by an average bitrate with the same cap.
+        if (candidate.format != AV_PIX_FMT_YUV420P) enc->bit_rate = bitrate;
+        enc->rc_max_rate = bitrate * 3 / 2;
+        enc->rc_buffer_size = static_cast<int>(std::min<int64_t>(bitrate * 3, INT32_MAX));
+        enc->color_range = dec->color_range;
+        enc->colorspace = dec->colorspace;
+        enc->color_primaries = dec->color_primaries;
+        enc->color_trc = dec->color_trc;
+        enc->sample_aspect_ratio = dec->sample_aspect_ratio;
+        AVDictionary* options = nullptr;
+        for (const auto& [key, value] : candidate.options) av_dict_set(&options, key, value, 0);
+        int result = avcodec_open2(enc.get(), encoder, &options);
+        av_dict_free(&options);
+        if (result >= 0) {
+            ffmpeg_detail.clear(); // A skipped candidate's message ("Cannot load nvcuda.dll") must not tag later errors.
+            return enc;
+        }
+        tried += std::string(tried.empty() ? "" : ", ") + candidate.name;
+    }
+    throw std::runtime_error("No H.264 encoder could be opened for frame-accurate trimming (tried: " + tried + ").");
+}
+
 // Keeps DTS strictly increasing per output stream and PTS >= DTS, then interleaves the packet.
 static void write_monotonic(AVFormatContext* output, AVPacket* packet, std::vector<int64_t>& last_dts, const char* operation) {
     auto& last = last_dts[packet->stream_index];
@@ -145,52 +197,9 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
         dec_ctx = Codec(avcodec_alloc_context3(decoder));
         if (!dec_ctx) throw std::bad_alloc();
         avcheck(avcodec_parameters_to_context(dec_ctx.get(), in_vst->codecpar), "Configure video decoder parameters");
-        dec_ctx->thread_count = 4;
+        dec_ctx->thread_count = 0; // Let FFmpeg pick the thread count for this machine.
         avcheck(avcodec_open2(dec_ctx.get(), decoder, nullptr), "Open video decoder for trim");
-
-        const AVCodec* encoder = avcodec_find_encoder_by_name("libx264");
-        if (!encoder) {
-            encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
-        }
-        if (!encoder) {
-            throw std::runtime_error("H.264 encoder (libx264) not found for trim re-encoding.");
-        }
-        enc_ctx = Codec(avcodec_alloc_context3(encoder));
-        if (!enc_ctx) throw std::bad_alloc();
-
-        enc_ctx->width = dec_ctx->width;
-        enc_ctx->height = dec_ctx->height;
-        enc_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
-        AVRational fps = in_vst->avg_frame_rate.num > 0 ? in_vst->avg_frame_rate : in_vst->r_frame_rate;
-        if (fps.num <= 0 || fps.den <= 0) fps = AVRational{30, 1};
-        enc_ctx->framerate = fps;
-        // Source time base keeps variable-frame-rate capture timing intact.
-        enc_ctx->time_base = in_vst->time_base;
-        enc_ctx->max_b_frames = 0;
-        enc_ctx->gop_size = (fps.num / fps.den > 0) ? (fps.num / fps.den) : 30;
-        enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER | AV_CODEC_FLAG_CLOSED_GOP;
-
-        if (in_vst->codecpar->bit_rate > 0) {
-            enc_ctx->bit_rate = in_vst->codecpar->bit_rate;
-        } else if (input.format->bit_rate > 0) {
-            enc_ctx->bit_rate = input.format->bit_rate;
-        } else {
-            enc_ctx->bit_rate = 6'000'000;
-        }
-
-        enc_ctx->color_range = dec_ctx->color_range;
-        enc_ctx->colorspace = dec_ctx->colorspace;
-        enc_ctx->color_primaries = dec_ctx->color_primaries;
-        enc_ctx->color_trc = dec_ctx->color_trc;
-        enc_ctx->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
-
-        AVDictionary* enc_opts = nullptr;
-        av_dict_set(&enc_opts, "preset", "veryfast", 0);
-        av_dict_set(&enc_opts, "tune", "zerolatency", 0);
-        av_dict_set(&enc_opts, "crf", "20", 0);
-        int enc_res = avcodec_open2(enc_ctx.get(), encoder, &enc_opts);
-        av_dict_free(&enc_opts);
-        avcheck(enc_res, "Open libx264 video encoder for trim");
+        enc_ctx = open_trim_encoder(dec_ctx.get(), in_vst, input.format->bit_rate);
     }
 
     TrimOutputGuard output(target_path);

@@ -23,6 +23,9 @@ public static class Text
 
     public static string Language { get; private set; } = Russian;
 
+    /// <summary>The language of a first start: Russian when Windows displays Russian, English for any other language.</summary>
+    public static string WindowsDefault => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == Russian ? Russian : English;
+
     /// <summary>Culture for language-dependent formatting such as month names. Numbers keep the OS culture.</summary>
     public static CultureInfo Culture => CultureInfo.GetCultureInfo(Language == English ? "en-US" : "ru-RU");
 

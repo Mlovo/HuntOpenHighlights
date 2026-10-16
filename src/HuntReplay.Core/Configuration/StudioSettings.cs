@@ -8,8 +8,38 @@ namespace HuntReplay.Core.Configuration;
 public enum CaptureSource { HuntWindow, Monitor }
 public enum VideoEncoder { Auto, Amf, Nvenc, Qsv, X264 }
 public enum VideoCodec { H264, Hevc, Av1 }
-public enum VideoResolution { Native, FullHd, Qhd, Uhd }
+// Each preset is an output height; the width follows the source's aspect ratio. FullHd, Qhd and Uhd keep their
+// names from older configs (1080p, 1440p, 2160p); the other presets were added after them.
+public enum VideoResolution { Native, FullHd, Qhd, Uhd, P720, P900, P1200, P1600 }
 public enum AudioMode { Mix, SeparateTracks }
+public enum OverlayCorner { TopLeft, TopRight, BottomLeft, BottomRight }
+
+public static class VideoResolutions
+{
+    /// <summary>Every preset other than Native, from the smallest output to the largest.</summary>
+    public static IReadOnlyList<VideoResolution> Presets { get; } = [
+        VideoResolution.P720, VideoResolution.P900, VideoResolution.FullHd, VideoResolution.P1200,
+        VideoResolution.Qhd, VideoResolution.P1600, VideoResolution.Uhd];
+
+    /// <summary>The output height of a preset; 0 for Native.</summary>
+    public static int Height(this VideoResolution resolution) => resolution switch
+    {
+        VideoResolution.P720 => 720, VideoResolution.P900 => 900, VideoResolution.FullHd => 1080, VideoResolution.P1200 => 1200,
+        VideoResolution.Qhd => 1440, VideoResolution.P1600 => 1600, VideoResolution.Uhd => 2160, _ => 0
+    };
+
+    /// <summary>
+    /// The size recorded from a source of the given size. Mirrors hr::fit_output in native/src/capture.cpp:
+    /// the source's aspect ratio is kept, dimensions are even, and a preset never scales the source up.
+    /// </summary>
+    public static (int Width, int Height) OutputSize(this VideoResolution resolution, int sourceWidth, int sourceHeight)
+    {
+        int height = resolution.Height();
+        if (height == 0 || height >= sourceHeight) return (sourceWidth / 2 * 2, sourceHeight / 2 * 2);
+        int width = (int)Math.Round((double)sourceWidth * height / sourceHeight, MidpointRounding.AwayFromZero);
+        return (Math.Max(2, width / 2 * 2), height / 2 * 2);
+    }
+}
 
 public sealed class StudioSettings
 {
@@ -66,6 +96,7 @@ public sealed class StudioSettings
         Require(Storage.LimitGb is 0 or 15 or 30 or 60, "Settings.DiskLimitRange");
         ClipFileName.ValidateTemplate(Storage.FileNameTemplate);
         Require(System.HotkeyVirtualKey is >= 0x70 and <= 0x7B, "Settings.HotkeyRange");
+        Require(Enum.IsDefined(System.OverlayCorner) && System.OverlaySeconds is 2 or 3 or 5, "Settings.OverlayRange");
     }
 
     // Validation messages are catalog keys, resolved in the current UI language when a rule fails.
@@ -90,7 +121,8 @@ public sealed class VideoSettings
     public int Fps { get; set; } = 60;
     public VideoEncoder Encoder { get; set; } = VideoEncoder.Auto;
     public VideoCodec Codec { get; set; } = VideoCodec.H264;
-    public int BitrateMbps { get; set; } = 25;
+    // Hunt is often very dark; lower rates band and smear shadows. A saved config keeps its own rate.
+    public int BitrateMbps { get; set; } = 40;
     public int GopSeconds { get; set; } = 1;
 }
 
@@ -141,11 +173,15 @@ public sealed class SystemSettings
 {
     public int HotkeyVirtualKey { get; set; } = 0x78; // RegisterHotKey F9, NOT SendInput.
     public bool SoundOnSave { get; set; } = true;
-    public bool ToastOnSave { get; set; } = true;
+    // A small click-through notification over the game, never recorded into clips. Off unless the user enables it.
+    public bool OverlayEnabled { get; set; }
+    public OverlayCorner OverlayCorner { get; set; } = OverlayCorner.TopRight;
+    public int OverlaySeconds { get; set; } = 3;
     public bool StartWithWindows { get; set; }
     public bool AutoBufferWithGame { get; set; } = true;
     public bool CloseToTray { get; set; } = true;
     public bool FirstRunCompleted { get; set; }
-    public string Language { get; set; } = "ru";
+    // A saved config keeps its language; only a new one starts in the Windows display language.
+    public string Language { get; set; } = Text.WindowsDefault;
     public string Theme { get; set; } = "dark";
 }

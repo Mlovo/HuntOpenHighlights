@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using HuntReplay.App.Interop;
 using HuntReplay.Core.Localization;
 
@@ -36,7 +37,7 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
         Refresh([]);
     }
 
-    public IReadOnlyList<DeviceOption> Options { get => options; private set => Set(ref options, value); }
+    public IReadOnlyList<DeviceOption> Options { get => options; private set => SetProperty(ref options, value); }
 
     private string UnavailableCaption => unavailableCaptionProvider?.Invoke() ?? (kind switch
     {
@@ -52,7 +53,7 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
         {
             if (value is null || refreshing || value == readId()) return;
             writeId(value);
-            Notify();
+            OnPropertyChanged();
         }
     }
 
@@ -71,13 +72,13 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
             // source back while its internal selection change is still active; if
             // that read returns the old ID, SelectedValue can look restored while
             // SelectedItem remains null. Restore after the replacement has finished.
-            Notify(nameof(SelectedId));
+            OnPropertyChanged(nameof(SelectedId));
             Options = replacement;
         }
         finally
         {
             refreshing = false;
-            Notify(nameof(SelectedId));
+            OnPropertyChanged(nameof(SelectedId));
         }
     }
 }

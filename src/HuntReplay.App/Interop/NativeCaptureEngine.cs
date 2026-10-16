@@ -10,6 +10,8 @@ namespace HuntReplay.App.Interop;
 internal sealed class NativeCaptureEngine : IDisposable
 {
     private IntPtr session;
+    // Packet payloads of this session; chunks are reused instead of one large-object array per frame.
+    private readonly PayloadArena payloads = new();
     private readonly NativeMethods.PacketCallback packetCallback;
     private readonly NativeMethods.LogCallback logCallback;
     private Exception? callbackError;
@@ -54,7 +56,7 @@ internal sealed class NativeCaptureEngine : IDisposable
         {
             foreach (var packet in snapshot.Packets)
             {
-                fixed (byte* data = packet.Payload)
+                fixed (byte* data = packet.Payload.Span)
                 {
                     var native = new NativePacket
                     {
@@ -104,10 +106,8 @@ internal sealed class NativeCaptureEngine : IDisposable
             var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
             if (!GetMonitorInfo((IntPtr)(long)device.Handle, ref info)) continue;
             var key = device.IsDefault ? "Device.MonitorPrimary" : "Device.Monitor";
-            devices[i] = device with
-            {
-                Name = Text.Format(key, ordinal, info.Monitor.Right - info.Monitor.Left, info.Monitor.Bottom - info.Monitor.Top)
-            };
+            int width = info.Monitor.Right - info.Monitor.Left, height = info.Monitor.Bottom - info.Monitor.Top;
+            devices[i] = device with { Name = Text.Format(key, ordinal, width, height), Width = width, Height = height };
         }
         return devices;
     }
@@ -148,15 +148,11 @@ internal sealed class NativeCaptureEngine : IDisposable
             ? devices.FirstOrDefault(d => d.Kind == 0 && d.Id == settings.Video.MonitorDevice)
             : devices.FirstOrDefault(d => d.Kind == 0 && d.IsDefault);
         if (selected is null) throw new InvalidOperationException(Text.Get("Capture.MonitorDisconnected"));
-        var (width, height) = settings.Video.Resolution switch
-        {
-            VideoResolution.FullHd => (1920, 1080), VideoResolution.Qhd => (2560, 1440),
-            VideoResolution.Uhd => (3840, 2160), _ => (0, 0)
-        };
         return new NativeConfig
         {
             Size = (uint)Marshal.SizeOf<NativeConfig>(), Encoder = (int)settings.Video.Encoder, Codec = (int)settings.Video.Codec,
-            Fps = settings.Video.Fps, Width = width, Height = height, Bitrate = settings.Video.BitrateMbps * 1_000_000,
+            // Only the height is sent: the native layer derives the width from the captured window or monitor (hr::fit_output).
+            Fps = settings.Video.Fps, Width = 0, Height = settings.Video.Resolution.Height(), Bitrate = settings.Video.BitrateMbps * 1_000_000,
             GopSeconds = settings.Video.GopSeconds, Window = (ulong)window.ToInt64(), Monitor = selected.Handle,
             OutputDevice = settings.Audio.OutputDeviceId, MicrophoneDevice = settings.Audio.MicrophoneDeviceId,
             MicrophoneEnabled = settings.Audio.MicrophoneEnabled ? 1 : 0, MicrophoneGain = settings.Audio.MicrophoneVolume / 100f,
@@ -171,9 +167,10 @@ internal sealed class NativeCaptureEngine : IDisposable
         {
             if (callbackError is not null) return;
             if (packet.Size <= 0 || packet.Size > 64 * 1024 * 1024) throw new InvalidDataException(Text.Get("Capture.InvalidPacketSize"));
-            var payload = GC.AllocateUninitializedArray<byte>(packet.Size);
-            Marshal.Copy(packet.Data, payload, 0, payload.Length);
-            Packet?.Invoke(new(packet.Stream, payload, packet.PtsUs, packet.DtsUs, packet.DurationUs, packet.Keyframe != 0));
+            var (chunk, segment) = payloads.Rent(packet.Size);
+            Marshal.Copy(packet.Data, segment.Array!, segment.Offset, segment.Count);
+            // The buffer takes over the chunk reference, also when it rejects the packet.
+            Packet?.Invoke(new(packet.Stream, segment, packet.PtsUs, packet.DtsUs, packet.DurationUs, packet.Keyframe != 0) { Chunk = chunk });
         }
         catch (Exception ex)
         {

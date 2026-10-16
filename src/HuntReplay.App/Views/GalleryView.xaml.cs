@@ -19,7 +19,8 @@ namespace HuntReplay.App.Views;
 
 public partial class GalleryView : UserControl
 {
-    private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(20) };
+    // Frames are picked up once per WPF render pass, in step with the display, not on a 20 ms timer that beats against 60 FPS.
+    private readonly RenderTicker timer = new();
     // Written on the UI thread, read by the background thumbnail preload.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, BitmapSource> previewCache = new();
     private readonly object playerLock = new();
@@ -88,8 +89,11 @@ public partial class GalleryView : UserControl
                 }
                 else
                 {
-                    TrimSlider.Playhead = currentPts;
-                    PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(currentPts)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
+                    // While a fragment preview starts, the player may still report the position it is seeking away from;
+                    // the indicator never leaves the selected fragment.
+                    double shown = isPreviewingFragment ? Math.Clamp(currentPts, trimStart, trimEnd) : currentPts;
+                    TrimSlider.Playhead = shown;
+                    PositionText.Text = $"{VideoTrimmingFormatters.FormatTime(shown)} / {VideoTrimmingFormatters.FormatTime(naturalDuration)}";
                 }
             }
             else if (!dragging)
@@ -1107,6 +1111,26 @@ public partial class GalleryView : UserControl
                 e.Handled = true;
                 break;
         }
+    }
+
+    /// <summary>Start/Stop/Tick like a DispatcherTimer, but raised by CompositionTarget.Rendering.</summary>
+    private sealed class RenderTicker
+    {
+        private bool running;
+        public event EventHandler? Tick;
+        public void Start()
+        {
+            if (running) return;
+            running = true;
+            CompositionTarget.Rendering += OnRendering;
+        }
+        public void Stop()
+        {
+            if (!running) return;
+            running = false;
+            CompositionTarget.Rendering -= OnRendering;
+        }
+        private void OnRendering(object? sender, EventArgs e) => Tick?.Invoke(this, e);
     }
 
     private void ShowPaused()

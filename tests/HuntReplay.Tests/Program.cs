@@ -8,18 +8,50 @@ using HuntReplay.Core.Storage;
 using HuntReplay.Protocol;
 using HuntReplay.Protocol.Generated;
 
+using HuntReplay.TestShared;
+
 namespace HuntReplay.Tests;
+
+/// <summary>Every registered core test as its own MSTest case.</summary>
+[TestClass]
+public sealed class CoreSuite
+{
+    public static IEnumerable<object[]> Cases => TestRegistry.Rows(Program.RegisterAll);
+    public static string CaseName(System.Reflection.MethodInfo method, object[] row) => (string)row[0];
+
+    [TestMethod]
+    [DynamicData(nameof(Cases), DynamicDataDisplayName = nameof(CaseName))]
+    public Task Run(string name) => TestRegistry.Run(name);
+}
 
 public static partial class Program
 {
-    private static int passed, failed;
-    public static async Task<int> Main(string[] args)
+    /// <summary>Records every core test with <see cref="TestRegistry"/>; <see cref="CoreSuite"/> runs them under MSTest.</summary>
+    internal static void RegisterAll()
     {
-        if (args.Contains("--pipe-smoke")) return await LivePipeSmoke.RunAsync(args.Contains("--multi"), args.Contains("--control-id"));
         Test("defaults satisfy the settings contract", () => Settings().Validate());
         Test("unknown enum rejected", () => { var s = Settings(); s.Video.Codec = (VideoCodec)99; Throws<InvalidDataException>(s.Validate); });
         Test("NaN post-roll rejected", () => { var s = Settings(); s.Replay.PostEventSeconds = double.NaN; Throws<InvalidDataException>(s.Validate); });
         Test("unsupported FPS rejected", () => { var s = Settings(); s.Video.Fps = 59; Throws<InvalidDataException>(s.Validate); });
+        Test("older resolution names still load", () => Equal(VideoResolution.Qhd, JsonSerializer.Deserialize<StudioSettings>("""{"Video":{"Resolution":"Qhd"}}""", StudioSettings.JsonOptions)!.Video.Resolution));
+        Test("resolution presets cover every enum value except Native", () => Equal(Enum.GetValues<VideoResolution>().Length - 1, VideoResolutions.Presets.Distinct().Count()));
+        Test("resolution presets ascend by height", () => True(VideoResolutions.Presets.Zip(VideoResolutions.Presets.Skip(1)).All(p => p.First.Height() < p.Second.Height())));
+        Test("resolution preset keeps the source aspect ratio", () =>
+        {
+            Equal((1920, 1080), VideoResolution.FullHd.OutputSize(2560, 1440));
+            Equal((2580, 1080), VideoResolution.FullHd.OutputSize(3440, 1440));
+            Equal((1728, 1080), VideoResolution.FullHd.OutputSize(1920, 1200));
+            Equal((1280, 720), VideoResolution.P720.OutputSize(1366, 768)); // 1280.6 rounds to 1281, then down to even.
+        });
+        Test("resolution preset never scales the source up", () =>
+        {
+            Equal((1920, 1080), VideoResolution.Uhd.OutputSize(1920, 1080));
+            Equal((1920, 1080), VideoResolution.FullHd.OutputSize(1920, 1080));
+            Equal((1366, 768), VideoResolution.Native.OutputSize(1367, 769));
+        });
+        Test("overlay is off until enabled", () => False(Settings().System.OverlayEnabled));
+        Test("unsupported overlay duration rejected", () => { var s = Settings(); s.System.OverlaySeconds = 4; Throws<InvalidDataException>(s.Validate); });
+        Test("unknown overlay corner rejected", () => { var s = Settings(); s.System.OverlayCorner = (OverlayCorner)9; Throws<InvalidDataException>(s.Validate); });
         Test("x264 is explicit and H264-only", () => { var s = Settings(); s.Video.Encoder = VideoEncoder.X264; s.Video.Codec = VideoCodec.Hevc; Throws<InvalidDataException>(s.Validate); });
         Test("empty event selection disables both events", () => { var r = new ReplaySettings { HunterKilled = false, PlayerDowned = false }; False(r.IsEnabled("HUNTER_KILLED")); False(r.IsEnabled("PLAYER_DOWNED")); });
         Test("safe template and multi-kill name", () => Equal("Hunt_MULTI_KILL_x2_2026-10-08_12-13-14-000.mp4", ClipFileName.Create("Hunt_{event}_{date}_{time}.mp4", "MULTI_KILL_x2", new DateTimeOffset(2026,10,8,12,13,14,TimeSpan.Zero))));
@@ -198,12 +230,12 @@ public static partial class Program
             True(File.Exists(c.FullPath)); Equal("a.mp4,b.mp4.hunt.json", Names(path));
         }));
 
-        await TestAsync("framing supports short reads and big endian length", async()=> { var bus=Join(); using var output=new MemoryStream(); await BusFraming.WriteAsync(output,bus,default); var bytes=output.ToArray(); Equal(bus.CalculateSize(),(int)BinaryPrimitives.ReadUInt32BigEndian(bytes)); using var fragmented=new ShortReadStream(bytes); Equal("join",(await BusFraming.ReadAsync(fragmented,default))!.Uniqueid); });
-        await TestAsync("clean EOF is not malformed input",async()=>{using var stream=new MemoryStream();True(await BusFraming.ReadAsync(stream,default) is null);});
-        await TestAsync("incomplete header rejected",async()=>{using var stream=new MemoryStream(new byte[]{0,0});await ThrowsAsync<EndOfStreamException>(async()=>{await BusFraming.ReadAsync(stream,default);});});
-        await TestAsync("oversized frame rejected before allocation",async()=>{var header=new byte[4];BinaryPrimitives.WriteUInt32BigEndian(header,BusFraming.MaximumMessageBytes+1u);using var stream=new MemoryStream(header);await ThrowsAsync<InvalidDataException>(async()=>{await BusFraming.ReadAsync(stream,default);});});
-        await TestAsync("zero length frame rejected",async()=>{using var stream=new MemoryStream(new byte[4]);await ThrowsAsync<InvalidDataException>(async()=>{await BusFraming.ReadAsync(stream,default);});});
-        await TestAsync("truncated payload rejected",async()=>{using var stream=new MemoryStream(new byte[]{0,0,0,5,1});await ThrowsAsync<EndOfStreamException>(async()=>{await BusFraming.ReadAsync(stream,default);});});
+        TestAsync("framing supports short reads and big endian length", async()=> { var bus=Join(); using var output=new MemoryStream(); await BusFraming.WriteAsync(output,bus,default); var bytes=output.ToArray(); Equal(bus.CalculateSize(),(int)BinaryPrimitives.ReadUInt32BigEndian(bytes)); using var fragmented=new ShortReadStream(bytes); Equal("join",(await BusFraming.ReadAsync(fragmented,default))!.Uniqueid); });
+        TestAsync("clean EOF is not malformed input",async()=>{using var stream=new MemoryStream();True(await BusFraming.ReadAsync(stream,default) is null);});
+        TestAsync("incomplete header rejected",async()=>{using var stream=new MemoryStream(new byte[]{0,0});await ThrowsAsync<EndOfStreamException>(async()=>{await BusFraming.ReadAsync(stream,default);});});
+        TestAsync("oversized frame rejected before allocation",async()=>{var header=new byte[4];BinaryPrimitives.WriteUInt32BigEndian(header,BusFraming.MaximumMessageBytes+1u);using var stream=new MemoryStream(header);await ThrowsAsync<InvalidDataException>(async()=>{await BusFraming.ReadAsync(stream,default);});});
+        TestAsync("zero length frame rejected",async()=>{using var stream=new MemoryStream(new byte[4]);await ThrowsAsync<InvalidDataException>(async()=>{await BusFraming.ReadAsync(stream,default);});});
+        TestAsync("truncated payload rejected",async()=>{using var stream=new MemoryStream(new byte[]{0,0,0,5,1});await ThrowsAsync<EndOfStreamException>(async()=>{await BusFraming.ReadAsync(stream,default);});});
         Test("Python protobuf golden sequence matches C# SDK", ProtocolGolden);
         Test("bus join confirms NvNode SDKAPI peer and correlation",()=> {var s=Session();var replies=s.Process(Join());Equal(2,replies.Count);Equal("join",replies[0].ReferenceUniqueid);Equal("NvNode",replies[0].BusPeer[0].System);Equal("SDKAPI",replies[0].BusPeer[0].Module);True(replies[1].Joined);});
         Test("SDK requests require a JOIN",()=>Throws<InvalidDataException>(()=>Session().Process(Request("create",new(){CreateSDKInstanceRequest=new(){Client="Hunt",ClientPID=42}}))));
@@ -239,14 +271,13 @@ public static partial class Program
         DeviceSelectionTests();
         PlaybackDiagnosticsTests();
         LocalizationTests();
-        await VideoTrimmingTestsAsync();
-        Console.WriteLine($"\n{passed} passed; {failed} failed.");
-        return failed == 0 ? 0 : 1;
+        PayloadArenaTests();
+        VideoTrimmingTestsAsync().GetAwaiter().GetResult(); // Registers only; trim bodies run later as MSTest cases.
     }
 
     private static StudioSettings Settings() { var s=new StudioSettings();s.Storage.Directory=Path.GetFullPath(Path.Combine(Path.GetTempPath(),"HuntReplay-tests"));return s; }
-    private static EncodedPacket Video(int second,bool key)=>new(0,[1,2,3,4],second*1_000_000L,second*1_000_000L,1_000_000,key);
-    private static EncodedPacket Audio(int second)=>new(1,[5,6],second*1_000_000L,second*1_000_000L,1_000_000,false);
+    private static EncodedPacket Video(int second,bool key)=>new(0,new byte[]{1,2,3,4},second*1_000_000L,second*1_000_000L,1_000_000,key);
+    private static EncodedPacket Audio(int second)=>new(1,new byte[]{5,6},second*1_000_000L,second*1_000_000L,1_000_000,false);
     private static PacketRingBuffer Filled() {var ring=new PacketRingBuffer(60,10000);for(int i=0;i<20;i++){ring.Add(Video(i,i%2==0));ring.Add(Audio(i));}return ring;}
     private static HighlightEvent Event(string id,int second)=>new("s",id,"g","HUNTER_KILLED",second*1_000_000L,-20000,5000);
     private static void InTemp(Action<string> test) {var path=Path.Combine(Path.GetTempPath(),"HuntReplay-test-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(path);try{test(path);}finally{Directory.Delete(path,true);}}
@@ -296,13 +327,8 @@ public static partial class Program
         Equal(1,Response(s.Process(rows[6])).GetNumberOfHighlightsInGroupResponse.NumberOfHighlights);
         Equal(0,Response(s.Process(rows[7])).Retval);
     }
-    private static void Test(string name,Action action) {try{action();passed++;Console.WriteLine("PASS "+name);}catch(Exception ex){failed++;Console.WriteLine("FAIL "+name+": "+ex); ReportCiFailure(name, ex);}}
-    private static async Task TestAsync(string name,Func<Task> action) {try{await action();passed++;Console.WriteLine("PASS "+name);}catch(Exception ex){failed++;Console.WriteLine("FAIL "+name+": "+ex); ReportCiFailure(name, ex);}}
-    private static void ReportCiFailure(string name, Exception error)
-    {
-        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
-            Console.WriteLine("::error title=Core regression::" + (name + ": " + error).Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A"));
-    }
+    private static void Test(string name, Action action) => TestRegistry.Add(name, action);
+    private static Task TestAsync(string name, Func<Task> action) { TestRegistry.Add(name, action); return Task.CompletedTask; }
     private static void True(bool value) {if(!value)throw new Exception("Expected true");}
     private static void False(bool value)=>True(!value);
     private static void Equal<T>(T expected,T actual) {if(!EqualityComparer<T>.Default.Equals(expected,actual))throw new Exception($"Expected {expected}, got {actual}");}

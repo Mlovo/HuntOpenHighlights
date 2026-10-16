@@ -5,6 +5,8 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using HuntReplay.App.Interop;
 using HuntReplay.App.Services;
 using HuntReplay.App.Views;
@@ -31,6 +33,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string AppVersion { get; } = UpdateCheckerService.GetCurrentVersionString();
     private readonly CancellationTokenSource stop = new();
     private readonly SemaphoreSlim operation = new(1, 1);
+    private readonly OverlayService overlay;
     private Task? watcher;
     private HotkeyService? hotkey;
     private bool userPaused, manuallyStarted;
@@ -71,10 +74,12 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             if (page == value) return;
             if (page == "Settings" && HasUnsavedSettings)
             {
-                _ = HandleUnsavedAndNavigateAsync(value);
+                // This setter runs inside the navigation button's click and binding update. The dialog is shown once
+                // that input has been processed, so no click is swallowed and the binding is not re-entered.
+                dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _ = HandleUnsavedAndNavigateAsync(value)));
                 return;
             }
-            if (Set(ref page, value)) Notify(nameof(PageTitle));
+            if (SetProperty(ref page, value)) OnPropertyChanged(nameof(PageTitle));
         }
     }
 
@@ -102,14 +107,18 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task HandleUnsavedAndNavigateAsync(string targetPage)
     {
+        Mouse.Capture(null);
+        OnPropertyChanged(nameof(Page)); // Keep the Settings button selected while the question is open.
         if (await ConfirmLeaveSettingsAsync())
         {
-            if (Set(ref page, targetPage)) Notify(nameof(PageTitle));
+            // Outside the Page setter the caller name would be this method's: name the property explicitly, or the
+            // page content (bound to Page) never switches while the title (notified below) does.
+            if (SetProperty(ref page, targetPage, nameof(Page))) OnPropertyChanged(nameof(PageTitle));
         }
         else
         {
             // Re-trigger notification to ensure radio button stays on Settings
-            Notify(nameof(Page));
+            OnPropertyChanged(nameof(Page));
         }
     }
 
@@ -123,25 +132,25 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string Message
     {
         get => customMessage ?? Loc["Footer.DefaultMessage"];
-        private set { if (Set(ref customMessage, value)) Notify(); }
+        private set { if (SetProperty(ref customMessage, value)) OnPropertyChanged(); }
     }
     public string Diagnostics
     {
         get => customDiagnostics ?? Loc["Footer.DiagnosticsDefault"];
-        private set { if (Set(ref customDiagnostics, value)) Notify(); }
+        private set { if (SetProperty(ref customDiagnostics, value)) OnPropertyChanged(); }
     }
     public string SelectedEventLabel => SelectedClip?.EventLabel ?? Loc["Gallery.NoClipSelected"];
-    public bool Busy { get => busy; private set { if (Set(ref busy, value)) CommandManager.InvalidateRequerySuggested(); } }
+    public bool Busy { get => busy; private set { if (SetProperty(ref busy, value)) NotifyCommands(ToggleBufferCommand, SaveCommand, ApplySettingsCommand, DiagnoseCommand, InstallCommand, UninstallCommand); } }
     public StudioSettings SettingsEdit
     {
         get => settingsEdit;
-        private set { if (Set(ref settingsEdit, value)) RefreshDeviceSelections(); }
+        private set { if (SetProperty(ref settingsEdit, value)) RefreshDeviceSelections(); }
     }
-    public string Search { get => search; set { if (Set(ref search, value)) FilteredClips.Refresh(); } }
+    public string Search { get => search; set { if (SetProperty(ref search, value)) FilteredClips.Refresh(); } }
     public ClipViewModel? SelectedClip
     {
         get => selectedClip;
-        set { if (Set(ref selectedClip, value)) { recorder.ProtectPlayingClip(value?.Clip.Metadata.Id); Notify(nameof(SelectedEventLabel)); CommandManager.InvalidateRequerySuggested(); } }
+        set { if (SetProperty(ref selectedClip, value)) { recorder.ProtectPlayingClip(value?.Clip.Metadata.Id); OnPropertyChanged(nameof(SelectedEventLabel)); NotifyCommands(DeleteCommand, RenameCommand, RevealCommand, OpenInPlayerCommand); } }
     }
     public bool IsBufferActive => status.Running && status.Buffer.Seconds > 0;
     public bool IsGameConnected => pipe.Games.Count > 0;
@@ -180,38 +189,35 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string UpdateButtonLabel => string.IsNullOrWhiteSpace(latestVersion) ? Loc["Header.UpdateAvailable"] : string.Format(Loc["Header.UpdateAvailableVersion"], latestVersion);
     public string UpdateStatusLabel => isCheckingUpdate ? Loc["Update.Checking"] :
         hasUpdate ? Loc.Format("Update.VersionAvailable", latestVersion) : Loc["Update.UpToDate"];
-    public ICommand ToggleBufferCommand { get; }
-    public ICommand SaveCommand { get; }
-    public ICommand ApplySettingsCommand { get; }
-    public ICommand BrowseCommand { get; }
-    public ICommand OpenFolderCommand { get; }
-    public ICommand RefreshCommand { get; }
-    public ICommand DeleteCommand { get; }
-    public ICommand RenameCommand { get; }
-    public ICommand RevealCommand { get; }
-    public ICommand OpenInPlayerCommand { get; }
-    public ICommand DiagnoseCommand { get; }
-    public ICommand SaveReportCommand { get; }
-    public ICommand InstallCommand { get; }
-    public ICommand UninstallCommand { get; }
-    public ICommand OpenLogsCommand { get; }
-    public ICommand SelectRecentCommand { get; }
-    public ICommand CheckUpdateCommand { get; }
-    public ICommand OpenUpdateCommand { get; }
-    public ICommand ToggleLanguageCommand { get; }
-    public ICommand ToggleThemeCommand { get; }
+    public IRelayCommand ToggleBufferCommand { get; }
+    public IRelayCommand SaveCommand { get; }
+    public IRelayCommand ApplySettingsCommand { get; }
+    public IRelayCommand BrowseCommand { get; }
+    public IRelayCommand OpenFolderCommand { get; }
+    public IRelayCommand RefreshCommand { get; }
+    public IRelayCommand DeleteCommand { get; }
+    public IRelayCommand RenameCommand { get; }
+    public IRelayCommand RevealCommand { get; }
+    public IRelayCommand OpenInPlayerCommand { get; }
+    public IRelayCommand DiagnoseCommand { get; }
+    public IRelayCommand SaveReportCommand { get; }
+    public IRelayCommand InstallCommand { get; }
+    public IRelayCommand UninstallCommand { get; }
+    public IRelayCommand OpenLogsCommand { get; }
+    public IRelayCommand SelectRecentCommand { get; }
+    public IRelayCommand CheckUpdateCommand { get; }
+    public IRelayCommand OpenUpdateCommand { get; }
+    public IRelayCommand ToggleLanguageCommand { get; }
+    public IRelayCommand ToggleThemeCommand { get; }
+    public IRelayCommand PreviewOverlayCommand { get; }
     public event Action? ClosePlayer;
 
     private readonly Choice<CaptureSource>[] sources = [
         new(CaptureSource.HuntWindow, ""),
         new(CaptureSource.Monitor, "")
     ];
-    private readonly Choice<VideoResolution>[] resolutions = [
-        new(VideoResolution.Native, ""),
-        new(VideoResolution.FullHd, "1920 × 1080"),
-        new(VideoResolution.Qhd, "2560 × 1440"),
-        new(VideoResolution.Uhd, "3840 × 2160")
-    ];
+    private readonly Choice<VideoResolution>[] resolutions =
+        [new(VideoResolution.Native, ""), .. VideoResolutions.Presets.Select(r => new Choice<VideoResolution>(r, ""))];
     private readonly Choice<VideoEncoder>[] encoders = [
         new(VideoEncoder.Auto, ""),
         new(VideoEncoder.Amf, "AMD AMF"),
@@ -234,8 +240,17 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         new(60, ""),
         new(0, "")
     ];
+    private readonly Choice<OverlayCorner>[] overlayCorners = [
+        new(OverlayCorner.TopLeft, ""),
+        new(OverlayCorner.TopRight, ""),
+        new(OverlayCorner.BottomLeft, ""),
+        new(OverlayCorner.BottomRight, "")
+    ];
+    private readonly Choice<int>[] overlayDurations = [new(2, ""), new(3, ""), new(5, "")];
 
     public IReadOnlyList<Choice<CaptureSource>> Sources => sources;
+    public IReadOnlyList<Choice<OverlayCorner>> OverlayCorners => overlayCorners;
+    public IReadOnlyList<Choice<int>> OverlayDurations => overlayDurations;
     public IReadOnlyList<Choice<VideoResolution>> Resolutions => resolutions;
     public IReadOnlyList<Choice<VideoEncoder>> Encoders => encoders;
     public IReadOnlyList<Choice<VideoCodec>> Codecs => codecs;
@@ -250,7 +265,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         sources[0].Label = Loc["Choice.SourceHuntWindow"];
         sources[1].Label = Loc["Choice.SourceMonitor"];
 
-        resolutions[0].Label = Loc["Choice.ResolutionNative"];
+        RefreshResolutionChoices();
 
         encoders[0].Label = Loc["Choice.EncoderAuto"];
         encoders[4].Label = Loc["Choice.EncoderX264"];
@@ -266,12 +281,19 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         diskLimits[1].Label = Loc.Format("Choice.DiskLimitGb", 30);
         diskLimits[2].Label = Loc.Format("Choice.DiskLimitGb", 60);
         diskLimits[3].Label = Loc["Choice.DiskUnlimited"];
+
+        overlayCorners[0].Label = Loc["Choice.CornerTopLeft"];
+        overlayCorners[1].Label = Loc["Choice.CornerTopRight"];
+        overlayCorners[2].Label = Loc["Choice.CornerBottomLeft"];
+        overlayCorners[3].Label = Loc["Choice.CornerBottomRight"];
+        foreach (var duration in overlayDurations) duration.Label = Loc.Format("Choice.Seconds", duration.Value);
     }
 
     public MainViewModel(SettingsStore store, RecorderService recorder, HighlightsPipeServer pipe, StudioLog log, bool portable, string libraryRoot)
     {
         dispatcher = Dispatcher.CurrentDispatcher;
         this.store = store; this.recorder = recorder; this.pipe = pipe; this.log = log; this.portable = portable; this.libraryRoot = libraryRoot;
+        overlay = new(log);
         Loc.SetLanguage(recorder.Settings.System.Language);
         settingsEdit = recorder.Settings.Clone();
         MonitorSelection = new(0,
@@ -293,27 +315,30 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         FilteredClips = CollectionViewSource.GetDefaultView(Clips);
         FilteredClips.Filter = value => value is ClipViewModel c &&
             (string.IsNullOrWhiteSpace(Search) || c.FileName.Contains(Search, StringComparison.OrdinalIgnoreCase) || c.EventLabel.Contains(Search, StringComparison.OrdinalIgnoreCase));
-        ToggleBufferCommand = new AsyncCommand(ToggleAsync, Error, () => !Busy);
-        SaveCommand = new AsyncCommand(recorder.SaveManualAsync, Error, () => IsBufferActive && !Busy);
-        ApplySettingsCommand = new AsyncCommand(ApplyAsync, Error, () => !Busy);
-        BrowseCommand = new RelayCommand(_ => Safe(Browse));
-        OpenFolderCommand = new RelayCommand(_ => Safe(() => DesktopIntegration.OpenFolder(recorder.Settings.Storage.Directory)));
-        RefreshCommand = new AsyncCommand(RefreshClipsAsync, Error);
-        DeleteCommand = new RelayCommand(_ => Safe(DeleteClip), _ => SelectedClip is not null);
-        RenameCommand = new RelayCommand(_ => Safe(RenameClip), _ => SelectedClip is not null);
-        RevealCommand = new RelayCommand(_ => Safe(() => DesktopIntegration.RevealFile(SelectedClip!.Clip.FullPath)), _ => SelectedClip is not null);
-        OpenInPlayerCommand = new RelayCommand(_ => Safe(() => DesktopIntegration.OpenWithDefaultPlayer(SelectedClip!.Clip.FullPath)), _ => SelectedClip is not null);
-        DiagnoseCommand = new AsyncCommand(DiagnoseAsync, Error, () => !Busy);
-        SaveReportCommand = new RelayCommand(_ => Safe(SaveReport));
-        InstallCommand = new AsyncCommand(InstallAsync, Error, () => !Busy);
-        UninstallCommand = new AsyncCommand(UninstallAsync, Error, () => !Busy);
-        OpenLogsCommand = new RelayCommand(_ => Safe(() => DesktopIntegration.OpenFolder(log.DirectoryPath)));
-        SelectRecentCommand = new RelayCommand(value => { if (value is ClipViewModel clip) { Page = "Gallery"; SelectedClip = clip; } });
-        CheckUpdateCommand = new AsyncCommand(CheckUpdateManualAsync, Error, () => !isCheckingUpdate);
-        OpenUpdateCommand = new RelayCommand(_ => Safe(OpenUpdatePage));
-        ToggleLanguageCommand = new RelayCommand(_ => Safe(ToggleLanguage));
+        ToggleBufferCommand = Async(ToggleAsync, () => !Busy);
+        SaveCommand = Async(recorder.SaveManualAsync, () => IsBufferActive && !Busy);
+        ApplySettingsCommand = Async(ApplyAsync, () => !Busy);
+        BrowseCommand = new RelayCommand(() => Safe(Browse));
+        OpenFolderCommand = new RelayCommand(() => Safe(() => DesktopIntegration.OpenFolder(recorder.Settings.Storage.Directory)));
+        RefreshCommand = Async(RefreshClipsAsync);
+        DeleteCommand = new RelayCommand(() => Safe(DeleteClip), () => SelectedClip is not null);
+        RenameCommand = new RelayCommand(() => Safe(RenameClip), () => SelectedClip is not null);
+        RevealCommand = new RelayCommand(() => Safe(() => DesktopIntegration.RevealFile(SelectedClip!.Clip.FullPath)), () => SelectedClip is not null);
+        OpenInPlayerCommand = new RelayCommand(() => Safe(() => DesktopIntegration.OpenWithDefaultPlayer(SelectedClip!.Clip.FullPath)), () => SelectedClip is not null);
+        DiagnoseCommand = Async(DiagnoseAsync, () => !Busy);
+        SaveReportCommand = new RelayCommand(() => Safe(SaveReport));
+        InstallCommand = Async(InstallAsync, () => !Busy);
+        UninstallCommand = Async(UninstallAsync, () => !Busy);
+        OpenLogsCommand = new RelayCommand(() => Safe(() => DesktopIntegration.OpenFolder(log.DirectoryPath)));
+        SelectRecentCommand = new RelayCommand<object?>(value => { if (value is ClipViewModel clip) { Page = "Gallery"; SelectedClip = clip; } });
+        CheckUpdateCommand = Async(CheckUpdateManualAsync);
+        OpenUpdateCommand = new RelayCommand(() => Safe(OpenUpdatePage));
+        ToggleLanguageCommand = new RelayCommand(() => Safe(ToggleLanguage));
         ThemeSvc.SetTheme(recorder.Settings.System.Theme);
-        ToggleThemeCommand = new RelayCommand(_ => Safe(ToggleTheme));
+        ToggleThemeCommand = new RelayCommand(() => Safe(ToggleTheme));
+        // Uses the unsaved position and duration, so they can be tried before saving.
+        PreviewOverlayCommand = new RelayCommand(() => Safe(() =>
+            overlay.Notify(SettingsEdit.System, OverlayKind.Info, Loc["Overlay.PreviewTitle"], Loc["Overlay.PreviewDetail"], preview: true)));
         RebuildChoices();
         log.Entry += OnLog;
         recorder.Changed += OnChanged;
@@ -344,7 +369,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         try { Devices = await Task.Run(NativeCaptureEngine.EnumerateDevices); }
         catch (Exception ex) { Error(ex); Devices = []; }
         RefreshDeviceSelections();
-        Notify(nameof(GpuStatus));
+        OnPropertyChanged(nameof(GpuStatus));
     }
 
     private void RefreshDeviceSelections()
@@ -353,6 +378,38 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         OutputSelection.Refresh(Devices);
         MicrophoneSelection.Refresh(Devices);
         GpuSelection.Refresh(Devices);
+        RefreshResolutionChoices();
+    }
+
+    /// <summary>
+    /// Labels each preset with the size it records from the monitor the capture uses, and hides presets that would
+    /// scale that monitor up. The saved preset always stays visible. Window capture is sized from the window itself;
+    /// the primary monitor stands in for it here.
+    /// </summary>
+    public void RefreshResolutionChoices()
+    {
+        var video = SettingsEdit.Video;
+        var monitor = (video.Source == CaptureSource.Monitor && video.MonitorDevice.Length > 0
+                ? Devices.FirstOrDefault(d => d.Kind == 0 && d.Id == video.MonitorDevice)
+                : null)
+            ?? Devices.FirstOrDefault(d => d.Kind == 0 && d.IsDefault);
+        int width = monitor?.Width ?? 0, height = monitor?.Height ?? 0;
+        foreach (var choice in resolutions)
+        {
+            if (choice.Value == VideoResolution.Native)
+            {
+                choice.Label = height > 0 ? $"{Loc["Choice.ResolutionNative"]} · {width} × {height}" : Loc["Choice.ResolutionNative"];
+                continue;
+            }
+            int presetHeight = choice.Value.Height();
+            if (height > 0)
+            {
+                var (outputWidth, outputHeight) = choice.Value.OutputSize(width, height);
+                choice.Label = $"{presetHeight}p · {outputWidth} × {outputHeight}";
+            }
+            else choice.Label = $"{presetHeight}p";
+            choice.IsAvailable = height == 0 || presetHeight < height || choice.Value == video.Resolution;
+        }
     }
 
     private async Task ToggleAsync()
@@ -549,7 +606,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         });
         Clips.Clear(); foreach (var clip in result) Clips.Add(clip);
         SelectedClip = Clips.FirstOrDefault(c => c.Clip.Metadata.Id == selectedId);
-        Notify(nameof(RecentClips)); Notify(nameof(HasClips)); Notify(nameof(ClipCount)); Notify(nameof(LibrarySummary));
+        OnPropertyChanged(nameof(RecentClips)); OnPropertyChanged(nameof(HasClips)); OnPropertyChanged(nameof(ClipCount)); OnPropertyChanged(nameof(LibrarySummary));
     }
     private void Browse()
     {
@@ -564,7 +621,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         ClosePlayer?.Invoke();
         Library().Delete(clip.Clip);
         Clips.Remove(clip); SelectedClip = null;
-        Notify(nameof(RecentClips)); Notify(nameof(HasClips)); Notify(nameof(ClipCount)); Notify(nameof(LibrarySummary));
+        OnPropertyChanged(nameof(RecentClips)); OnPropertyChanged(nameof(HasClips)); OnPropertyChanged(nameof(ClipCount)); OnPropertyChanged(nameof(LibrarySummary));
     }
     private void RenameClip()
     {
@@ -574,7 +631,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         ClosePlayer?.Invoke();
         var renamed = Library().Rename(clip.Clip, dialog.Value);
         var index = Clips.IndexOf(clip); var model = new ClipViewModel(renamed);
-        Clips[index] = model; SelectedClip = model; Notify(nameof(RecentClips));
+        Clips[index] = model; SelectedClip = model; OnPropertyChanged(nameof(RecentClips));
     }
     private async Task DiagnoseAsync()
     {
@@ -596,7 +653,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             var status = await Task.Run(SelfInstaller.Check);
             var wizard = new SetupWizard(status) { Owner = Application.Current.MainWindow };
             wizard.ShowDialog();
-            setupReady = (await Task.Run(SelfInstaller.Check)).Ready; Notify(nameof(SetupLabel));
+            setupReady = (await Task.Run(SelfInstaller.Check)).Ready; OnPropertyChanged(nameof(SetupLabel));
         }
         finally { Busy = false; operation.Release(); }
     }
@@ -610,7 +667,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 Loc["Dialog.RestoreNvidiaTitle"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             var code = await SelfInstaller.RunElevatedAsync(uninstall: true);
             if (code != 0) throw new IOException(Loc["Error.RestoreFailed"]);
-            setupReady = false; Notify(nameof(SetupLabel));
+            setupReady = false; OnPropertyChanged(nameof(SetupLabel));
         }
         finally { Busy = false; operation.Release(); }
     }
@@ -618,11 +675,16 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     {
         Events.Insert(0, entry);
         while (Events.Count > 250) Events.RemoveAt(Events.Count - 1);
-        if (entry.Level == "ERROR") Message = entry.Message;
+        if (entry.Level == "ERROR")
+        {
+            Message = entry.Message;
+            overlay.Notify(recorder.Settings.System, OverlayKind.Problem, Loc["Overlay.Problem"], entry.Message);
+        }
     });
     private void OnChanged() => OnUi(RefreshStatus);
     private void OnSaved(LibraryClip clip) => OnUi(async () =>
     {
+        overlay.Notify(recorder.Settings.System, OverlayKind.Info, Loc["Overlay.ClipSaved"], clip.Metadata.FileName);
         try { await RefreshClipsAsync(); DesktopIntegration.NotifySaved(clip, recorder.Settings, log); Message = Loc.Format("Status.ClipSaved", clip.Metadata.FileName); }
         catch (Exception ex) { Error(ex); }
     });
@@ -638,11 +700,15 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     ];
     private void RefreshStatus()
     {
-        bool wasActive = IsBufferActive;
+        bool wasActive = IsBufferActive, wasRunning = status.Running;
         status = recorder.Status;
-        foreach (var property in StatusProperties) Notify(property);
-        // Only SaveCommand depends on live capture state; avoid re-querying every command four times a second.
-        if (IsBufferActive != wasActive) CommandManager.InvalidateRequerySuggested();
+        foreach (var property in StatusProperties) OnPropertyChanged(property);
+        if (status.Running != wasRunning)
+            overlay.Notify(recorder.Settings.System, OverlayKind.Info,
+                Loc[status.Running ? "Overlay.BufferStarted" : "Overlay.BufferStopped"],
+                status.Running ? Loc.Format("Overlay.BufferStartedDetail", HotkeyLabel) : "");
+        // Only SaveCommand depends on live capture state.
+        if (IsBufferActive != wasActive) SaveCommand.NotifyCanExecuteChanged();
     }
     public void Error(Exception ex) { Message = ex.Message; log.Write(ex.Message, "ERROR"); }
     // A preview failure is not an export failure: the saved MP4 stays as written, so this is a warning, not an error.
@@ -663,10 +729,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 hasUpdate = res.HasUpdate;
                 latestVersion = res.LatestVersion;
                 updateUrl = res.ReleaseUrl;
-                Notify(nameof(HasUpdate));
-                Notify(nameof(LatestVersion));
-                Notify(nameof(UpdateButtonLabel));
-                Notify(nameof(UpdateStatusLabel));
+                OnPropertyChanged(nameof(HasUpdate));
+                OnPropertyChanged(nameof(LatestVersion));
+                OnPropertyChanged(nameof(UpdateButtonLabel));
+                OnPropertyChanged(nameof(UpdateStatusLabel));
             });
         }
         catch (OperationCanceledException) { }
@@ -679,8 +745,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task CheckUpdateManualAsync()
     {
         isCheckingUpdate = true;
-        Notify(nameof(IsCheckingUpdate));
-        Notify(nameof(UpdateStatusLabel));
+        OnPropertyChanged(nameof(IsCheckingUpdate));
+        OnPropertyChanged(nameof(UpdateStatusLabel));
         Message = Loc["Update.CheckingGitHub"];
         try
         {
@@ -688,10 +754,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             hasUpdate = res.HasUpdate;
             latestVersion = res.LatestVersion;
             updateUrl = res.ReleaseUrl;
-            Notify(nameof(HasUpdate));
-            Notify(nameof(LatestVersion));
-            Notify(nameof(UpdateButtonLabel));
-            Notify(nameof(UpdateStatusLabel));
+            OnPropertyChanged(nameof(HasUpdate));
+            OnPropertyChanged(nameof(LatestVersion));
+            OnPropertyChanged(nameof(UpdateButtonLabel));
+            OnPropertyChanged(nameof(UpdateStatusLabel));
 
             if (res.HasUpdate)
             {
@@ -709,8 +775,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         finally
         {
             isCheckingUpdate = false;
-            Notify(nameof(IsCheckingUpdate));
-            Notify(nameof(UpdateStatusLabel));
+            OnPropertyChanged(nameof(IsCheckingUpdate));
+            OnPropertyChanged(nameof(UpdateStatusLabel));
         }
     }
 
@@ -737,7 +803,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         customMessage = null;
         customDiagnostics = null;
         // Language affects almost every computed label; an empty name refreshes all bindings on this view model.
-        Notify(string.Empty);
+        OnPropertyChanged(string.Empty);
         FilteredClips.Refresh();
     }
 
@@ -746,10 +812,18 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         ThemeSvc.ToggleTheme();
         store.Save(recorder.UpdatePreferences(s => s.Theme = ThemeSvc.ThemeCode));
         SettingsEdit.System.Theme = ThemeSvc.ThemeCode;
-        Notify(nameof(ThemeButtonLabel));
+        OnPropertyChanged(nameof(ThemeButtonLabel));
     }
 
     private void Safe(Action action) { try { action(); } catch (Exception ex) { Error(ex); } }
+    // AsyncRelayCommand blocks re-entry while it runs; failures surface through Error like every other command.
+    private AsyncRelayCommand Async(Func<Task> execute, Func<bool>? canExecute = null) =>
+        new(async () => { try { await execute(); } catch (Exception ex) { Error(ex); } }, canExecute ?? (() => true));
+    // Properties can change before the constructor has created every command.
+    private static void NotifyCommands(params IRelayCommand?[] commands)
+    {
+        foreach (var command in commands) command?.NotifyCanExecuteChanged();
+    }
     public async ValueTask DisposeAsync()
     {
         stop.Cancel();
@@ -757,6 +831,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         await operation.WaitAsync(); // Wait for a user-initiated start/settings/probe/UAC workflow too.
         Busy = true;
         hotkey?.Dispose();
+        overlay.Dispose();
         recorder.Changed -= OnChanged; recorder.ClipSaved -= OnSaved; pipe.StateChanged -= OnChanged; log.Entry -= OnLog;
         stop.Dispose(); operation.Dispose();
     }

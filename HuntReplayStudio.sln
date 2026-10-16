@@ -16,6 +16,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{2954FE3A
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntReplay.E2ETests", "tests\HuntReplay.E2ETests\HuntReplay.E2ETests.csproj", "{865EF298-3B59-4D73-B7A3-8CC04F588855}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{53BEA997-5D99-4672-8A3D-FEE05A5BA819}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PipeSmoke", "tools\PipeSmoke\PipeSmoke.csproj", "{6BC51F6D-3AF5-4998-A161-F7F0DE0666C0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -46,8 +50,13 @@ Global
 		{865EF298-3B59-4D73-B7A3-8CC04F588855}.Debug|x64.Build.0 = Debug|x64
 		{865EF298-3B59-4D73-B7A3-8CC04F588855}.Release|x64.ActiveCfg = Release|x64
 		{865EF298-3B59-4D73-B7A3-8CC04F588855}.Release|x64.Build.0 = Release|x64
+		{6BC51F6D-3AF5-4998-A161-F7F0DE0666C0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6BC51F6D-3AF5-4998-A161-F7F0DE0666C0}.Debug|x64.Build.0 = Debug|Any CPU
+		{6BC51F6D-3AF5-4998-A161-F7F0DE0666C0}.Release|x64.ActiveCfg = Release|Any CPU
+		{6BC51F6D-3AF5-4998-A161-F7F0DE0666C0}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{865EF298-3B59-4D73-B7A3-8CC04F588855} = {2954FE3A-8D9B-425B-9AA5-CC8D7E693508}
+		{6BC51F6D-3AF5-4998-A161-F7F0DE0666C0} = {53BEA997-5D99-4672-8A3D-FEE05A5BA819}
 	EndGlobalSection
 EndGlobal

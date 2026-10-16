@@ -7,14 +7,22 @@
     <PlatformTarget>x64</PlatformTarget>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- MSTest on Microsoft.Testing.Platform: the project is a self-running test executable (dotnet run). -->
+    <EnableMSTestRunner>true</EnableMSTestRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MSTest.TestAdapter" Version="4.4.1" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.4.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <Compile Include="../Shared/TestRegistry.cs" Link="Shared/TestRegistry.cs" />
+    <Compile Include="../Shared/StaWorker.cs" Link="Shared/StaWorker.cs" />
     <ProjectReference Include="../../src/HuntReplay.Core/HuntReplay.Core.csproj" />
     <ProjectReference Include="../../src/HuntReplay.Protocol/HuntReplay.Protocol.csproj" />
     <!-- Process and ffmpeg helpers shared by the media suites. -->
     <Compile Include="../Shared/MediaTestKit.cs" Link="Shared/MediaTestKit.cs" />
     <Compile Include="../../src/HuntReplay.App/Interop/DeviceOption.cs" Link="Production/DeviceOption.cs" />
-    <Compile Include="../../src/HuntReplay.App/ViewModels/ObservableObject.cs" Link="Production/ObservableObject.cs" />
+    <Compile Include="../../src/HuntReplay.App/ViewModels/Choice.cs" Link="Production/Choice.cs" />
     <Compile Include="../../src/HuntReplay.App/ViewModels/DeviceSelectionViewModel.cs" Link="Production/DeviceSelectionViewModel.cs" />
     <Compile Include="../../src/HuntReplay.App/Views/Converters.cs" Link="Production/Converters.cs" />
   </ItemGroup>

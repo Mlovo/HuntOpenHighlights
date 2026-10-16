@@ -13,6 +13,17 @@ void validate(const hr_config& c) {
         throw std::runtime_error("Invalid capture configuration.");
     if (c.encoder == 4 && c.codec != 0) throw std::runtime_error("CPU x264 supports H.264 only.");
 }
+// A height without a width keeps the source's aspect ratio and never scales the source up; no height records the
+// source as it is. An explicit width and height are used unchanged. HuntReplay.Core VideoResolutions.OutputSize mirrors this.
+void fit_output(hr_config& c, int source_width, int source_height) {
+    if (c.width > 0 && c.height > 0) return;
+    if (c.height <= 0 || c.height >= source_height) {
+        c.width = (source_width / 2) * 2; c.height = (source_height / 2) * 2;
+        return;
+    }
+    const long width = std::lround(static_cast<double>(source_width) * c.height / source_height);
+    c.width = std::max(2, static_cast<int>(width / 2) * 2); c.height = (c.height / 2) * 2;
+}
 Session::Session(const hr_config& source, hr_packet_callback packet_cb, hr_log_callback log_cb, void* context)
     : config(source), packets(packet_cb), logs(log_cb), user(context) {
     validate(source);
@@ -153,9 +164,7 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
         else check(interop->CreateForMonitor(monitor, winrt::guid_of<Capture::GraphicsCaptureItem>(), winrt::put_abi(item)));
         auto size = item.Size();
         if (size.Width < 2 || size.Height < 2) throw std::runtime_error("Capture target has no visible content.");
-        if (config.width == 0 || config.height == 0) {
-            config.width = (size.Width / 2) * 2; config.height = (size.Height / 2) * 2;
-        }
+        fit_output(config, size.Width, size.Height);
         validate(config);
         if (d3d->requested_fallback)
             log(1, "Selected GPU \"" + utf8(gpu_id) + "\" is unavailable; using " + utf8(d3d->name) + ".");
@@ -177,7 +186,8 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
         auto closed_handler = item.Closed(winrt::auto_revoke, [closed](auto&&, auto&&) { *closed = true; });
         epoch_100ns = qpc_100ns();
         audio = std::make_unique<AudioCapture>(config, epoch_100ns, callback,
-            [this](std::string message) { log(2, message); failed = true; });
+            [this](std::string message) { log(2, message); failed = true; },
+            [this](std::string message) { log(1, message); });
         // Audio parameters are final now; video parameters are frozen on the first packet.
         for (AVCodecContext* codec : {video->codec.get()}) {
             auto* p = avcodec_parameters_alloc(); if (!p) throw std::bad_alloc();
@@ -195,6 +205,7 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
         int input_width = 0, input_height = 0;
         int64_t last_pts = -1;
         int64_t last_arrival = epoch_100ns;
+        PreciseTimer pacer;
         auto next = Clock::now();
         const auto interval = std::chrono::nanoseconds(1'000'000'000 / config.fps);
         while (!stop.stop_requested() && !failed && !closed->load()) {
@@ -240,7 +251,7 @@ void Session::capture(std::stop_token stop, std::promise<void> ready) {
                 throw std::runtime_error("WGC returned no frames for 5 seconds. Restore the window / disable protected or exclusive presentation.");
             }
             if (next < Clock::now() - interval) next = Clock::now();
-            std::this_thread::sleep_until(next);
+            pacer.sleep_until(next);
         }
         if (closed->load()) log(1, "Capture target closed.");
         capture_session.Close(); capture_session = nullptr;

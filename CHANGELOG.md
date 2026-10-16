@@ -2,6 +2,30 @@
 
 All notable changes to **HuntReplay Studio** are documented in this file.
 
+## [0.1.9] - 2026-10-16
+
+### Added
+- **Notifications over the game** (Settings → System, off by default): a small click-through notice when a clip is saved, the replay buffer starts or stops, or recording fails. It never takes focus from the game and is never recorded into clips. Choice of corner and duration, with a preview button. Not shown while a game runs in exclusive fullscreen, where a window on top can freeze it; borderless and windowed modes show it.
+- **More output resolutions**: 720p, 900p, 1080p, 1200p, 1440p, 1600p and 2160p. Each keeps the monitor's aspect ratio (1080p on a 3440 × 1440 monitor records 2580 × 1080 instead of letterboxing), and resolutions above the monitor's own are hidden. Existing 1080p / 1440p / 2160p settings carry over.
+- **Language switch in the first-run setup wizard**.
+
+### Changed
+- A new install starts in the Windows display language (Russian or English).
+- Default bitrate raised from 25 to 40 Mbit/s: Hunt is often very dark and low rates smear shadows. Existing settings keep their bitrate.
+- Encoders use recording-oriented presets; frame pacing uses a high-resolution timer.
+- Audio follows a change of the default Windows output device during recording.
+- Trimming re-encodes on the GPU encoder when one is available; the built-in player decodes on the GPU and refreshes in step with the display.
+- Lower memory churn while buffering; many internal performance and readability improvements.
+- The NVIDIA container is paused only when it actually holds the Highlights pipe.
+
+### Fixed
+- The chosen language was lost after a restart when settings were saved later.
+- Unsaved-settings question needed a second click before it switched pages.
+- During a trimmed-fragment preview, the playback position could start slightly before the fragment.
+- Player restart after the end of a clip could crash; portable mode registered trimmed clips in the wrong library; clip folders on network shares failed exports; QSV keyframes; several smaller audit fixes.
+
+---
+
 ## [0.1.6] - 2026-10-11
 
 ### Added

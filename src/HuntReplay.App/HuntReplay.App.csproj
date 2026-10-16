@@ -9,7 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>HuntReplayStudio</AssemblyName>
     <RootNamespace>HuntReplay.App</RootNamespace>
-    <Version>0.1.8</Version>
+    <Version>0.1.9</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/Studio.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -22,6 +22,7 @@
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
     <ProjectReference Include="../HuntReplay.Core/HuntReplay.Core.csproj" />
     <ProjectReference Include="../HuntReplay.Protocol/HuntReplay.Protocol.csproj" />

@@ -27,24 +27,34 @@ public sealed class PacketRingBuffer
         streams[0] = new();
     }
 
+    /// <summary>Takes ownership of the packet, including its arena chunk reference, whether it is kept or not.</summary>
     public void Add(EncodedPacket packet)
     {
-        if (packet.StreamIndex is < 0 or > 2 || packet.Payload.Length == 0 || packet.DurationUs < 0 ||
-            packet.PtsUs < -1_000_000 || packet.DtsUs < -1_000_000 ||
-            packet.PtsUs > long.MaxValue - packet.DurationUs)
-            throw new InvalidDataException(Text.Get("Buffer.InvalidPacket"));
-        lock (gate)
+        bool kept = false;
+        try
         {
-            var video = streams[0];
-            if (video.Count == 0 && !(packet.IsVideo && packet.IsKeyFrame)) return;
-            if (!streams.TryGetValue(packet.StreamIndex, out var queue)) streams[packet.StreamIndex] = queue = new();
-            if (queue.Last is { } last && packet.DtsUs <= last.Value.DtsUs)
-                throw new InvalidDataException(Text.Get("Buffer.DtsBackwards"));
-            if (!packet.IsVideo && packet.DtsUs < video.First!.Value.DtsUs) return;
-            queue.AddLast(packet);
-            bytes += packet.Payload.Length;
-            if (packet.IsVideo) latestVideoEnd = Math.Max(latestVideoEnd, packet.EndUs);
-            Evict();
+            if (packet.StreamIndex is < 0 or > 2 || packet.Payload.Length == 0 || packet.DurationUs < 0 ||
+                packet.PtsUs < -1_000_000 || packet.DtsUs < -1_000_000 ||
+                packet.PtsUs > long.MaxValue - packet.DurationUs)
+                throw new InvalidDataException(Text.Get("Buffer.InvalidPacket"));
+            lock (gate)
+            {
+                var video = streams[0];
+                if (video.Count == 0 && !(packet.IsVideo && packet.IsKeyFrame)) return;
+                if (!streams.TryGetValue(packet.StreamIndex, out var queue)) streams[packet.StreamIndex] = queue = new();
+                if (queue.Last is { } last && packet.DtsUs <= last.Value.DtsUs)
+                    throw new InvalidDataException(Text.Get("Buffer.DtsBackwards"));
+                if (!packet.IsVideo && packet.DtsUs < video.First!.Value.DtsUs) return;
+                queue.AddLast(packet);
+                kept = true;
+                bytes += packet.Payload.Length;
+                if (packet.IsVideo) latestVideoEnd = Math.Max(latestVideoEnd, packet.EndUs);
+                Evict();
+            }
+        }
+        finally
+        {
+            if (!kept) packet.Chunk?.Release(); // A rejected packet must not pin its chunk forever.
         }
     }
 
@@ -107,6 +117,8 @@ public sealed class PacketRingBuffer
                 if (id == 0) continue;
                 packets.AddRange(queue.Where(p => p.DtsUs >= key.DtsUs && p.PtsUs < end));
             }
+            // The snapshot outlives eviction: it keeps its chunks alive until it is disposed after the export.
+            foreach (var packet in packets) packet.Chunk?.AddReference();
             // Stable ordering puts the IDR before an audio packet with the same DTS.
             packets.Sort((a, b) => a.DtsUs != b.DtsUs ? a.DtsUs.CompareTo(b.DtsUs) : a.StreamIndex.CompareTo(b.StreamIndex));
             return new(packets, key.PtsUs, end, key.PtsUs > Math.Max(desiredStartUs, 0),
@@ -129,7 +141,11 @@ public sealed class PacketRingBuffer
             {
                 if (bytes <= byteLimit) break;
                 // Even one GOP can exceed a configured cap. Drop it and wait for the next IDR.
-                foreach (var queue in streams.Values) queue.Clear();
+                foreach (var queue in streams.Values)
+                {
+                    foreach (var dropped in queue) dropped.Chunk?.Release();
+                    queue.Clear();
+                }
                 bytes = 0;
                 latestVideoEnd = 0;
                 evictedGops++;
@@ -142,6 +158,7 @@ public sealed class PacketRingBuffer
                 while (queue.First is { } head && head.Value.DtsUs < keepDts)
                 {
                     bytes -= head.Value.Payload.Length;
+                    head.Value.Chunk?.Release();
                     queue.RemoveFirst();
                 }
             }

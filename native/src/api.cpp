@@ -61,9 +61,8 @@ int HR_CALL hr_probe(const hr_config* source) {
                 hr::check(GetMonitorInfoW(monitor, &info) ? S_OK : HRESULT_FROM_WIN32(GetLastError()));
                 area = info.rcMonitor;
             }
-            config.width = ((area.right - area.left) / 2) * 2;
-            config.height = ((area.bottom - area.top) / 2) * 2;
-            if (config.width < 2 || config.height < 2) throw std::runtime_error("Probe target has no usable dimensions.");
+            if (area.right - area.left < 2 || area.bottom - area.top < 2) throw std::runtime_error("Probe target has no usable dimensions.");
+            hr::fit_output(config, area.right - area.left, area.bottom - area.top);
             hr::validate(config);
         }
         int encoded = 0;

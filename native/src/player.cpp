@@ -190,12 +190,25 @@ struct PlayerImpl {
     double frame_pts = 0.0;
     bool has_new_frame = false;
 
-    // Scales outside the lock so the UI thread's read_frame never waits for a conversion.
+    Frame downloaded = make_frame(); // System-memory copy of a GPU-decoded frame, reused per frame.
+
+    // Scales outside the lock so the UI thread's read_frame never waits for a conversion. A D3D11 (GPU-decoded)
+    // frame is first copied to system memory; the scaler follows the actual frame format and size, so a stream
+    // that changes either mid-way is converted correctly instead of being read with stale parameters.
     void publish_frame(AVFrame* frame, double pts) {
+        AVFrame* source = frame;
+        if (frame->format == AV_PIX_FMT_D3D11) {
+            av_frame_unref(downloaded.get());
+            if (av_hwframe_transfer_data(downloaded.get(), frame, 0) < 0) return;
+            source = downloaded.get();
+        }
+        sws = sws_getCachedContext(sws, source->width, source->height, static_cast<AVPixelFormat>(source->format),
+                                   out_width, out_height, AV_PIX_FMT_BGRA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+        if (!sws) return;
         if (back_bgra.size() != frame_bgra.size()) back_bgra.resize(frame_bgra.size());
         uint8_t* dst_planes[1]{back_bgra.data()};
         int dst_strides[1]{out_stride};
-        sws_scale(sws, frame->data, frame->linesize, 0, frame->height, dst_planes, dst_strides);
+        sws_scale(sws, source->data, source->linesize, 0, source->height, dst_planes, dst_strides);
         std::lock_guard<std::mutex> lock(frame_mutex);
         frame_bgra.swap(back_bgra);
         frame_pts = pts;
@@ -208,7 +221,7 @@ struct PlayerImpl {
 
     std::mutex seek_mutex;
     std::condition_variable seek_done_cv;
-    std::atomic<bool> seek_done{false};
+    std::atomic<bool> seek_done{true}; // No seek is pending until player_seek requests one.
 
     std::mutex preview_mutex;
     AVFormatContext* preview_format = nullptr;
@@ -256,6 +269,12 @@ struct PlayerImpl {
 
         auto packet = make_packet();
         auto frame = make_frame();
+        // Frames between the keyframe and the target are decoded but not shown: publishing them made the picture
+        // and the reported position run through the seconds before the target while a seek was still in progress.
+        // If the target is never reached (end of file, decode budget), the last decoded frame is shown instead.
+        auto last = make_frame();
+        double last_pts = target;
+        bool reached = false;
         for (int attempts = 0; attempts < 300 && av_read_frame(format, packet.get()) >= 0; ++attempts) {
             if (packet->stream_index == video_stream_idx) {
                 if (avcodec_send_packet(video_codec.get(), packet.get()) >= 0) {
@@ -266,16 +285,24 @@ struct PlayerImpl {
                         } else if (frame->pts != AV_NOPTS_VALUE) {
                             pts = frame->pts * av_q2d(tb);
                         }
-                        publish_frame(frame.get(), pts);
-                        current_pts_sec = pts;
                         if (target <= 0.05 || pts >= target - 0.05) {
+                            publish_frame(frame.get(), pts);
+                            current_pts_sec = pts;
+                            reached = true;
                             av_packet_unref(packet.get());
                             break;
                         }
+                        av_frame_unref(last.get());
+                        av_frame_move_ref(last.get(), frame.get());
+                        last_pts = pts;
                     }
                 }
             }
             av_packet_unref(packet.get());
+        }
+        if (!reached && last->buf[0]) {
+            publish_frame(last.get(), last_pts);
+            current_pts_sec = last_pts;
         }
 
         clock_start_qpc = qpc_100ns();
@@ -285,6 +312,7 @@ struct PlayerImpl {
 
     void worker_loop() {
         Apartment apartment;
+        PreciseTimer pacer; // Video pacing at the frame rate needs sub-millisecond wakeups.
         // Reused for every packet; avcodec_receive_frame unreferences the frame before filling it.
         auto packet = make_packet();
         auto frame = make_frame();
@@ -330,7 +358,7 @@ struct PlayerImpl {
                             double master_time = clock_start_pts + (qpc_100ns() - clock_start_qpc) / 10'000'000.0;
                             double diff = pts - master_time;
                             if (diff > 0.002 && diff < 0.5) {
-                                std::this_thread::sleep_for(std::chrono::duration<double>(diff));
+                                pacer.sleep_for(std::chrono::duration<double>(diff));
                             }
                         }
 
@@ -354,6 +382,12 @@ struct PlayerImpl {
     }
 };
 
+static AVPixelFormat prefer_d3d11(AVCodecContext* codec, const AVPixelFormat* formats) {
+    for (const AVPixelFormat* format = formats; *format != AV_PIX_FMT_NONE; ++format)
+        if (*format == AV_PIX_FMT_D3D11) return *format;
+    return avcodec_default_get_format(codec, formats);
+}
+
 hr_player* player_open(const wchar_t* path, int32_t* width, int32_t* height, double* duration) {
     if (!path || !width || !height || !duration) throw std::runtime_error("Invalid player arguments.");
     auto player = std::make_unique<PlayerImpl>();
@@ -369,7 +403,16 @@ hr_player* player_open(const wchar_t* path, int32_t* width, int32_t* height, dou
     player->video_codec = Codec(avcodec_alloc_context3(v_decoder));
     if (!player->video_codec) throw std::bad_alloc();
     avcheck(avcodec_parameters_to_context(player->video_codec.get(), player->format->streams[player->video_stream_idx]->codecpar), "Configure video decoder");
-    player->video_codec->thread_count = 4;
+    // Decode on the GPU through D3D11VA when the device and driver support the stream; FFmpeg falls back to the
+    // software decoder by itself when get_format is not offered D3D11 or the hardware setup fails.
+    AVBufferRef* gpu = nullptr;
+    if (av_hwdevice_ctx_create(&gpu, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0) >= 0) {
+        player->video_codec->hw_device_ctx = gpu; // The codec context takes this reference.
+        player->video_codec->get_format = prefer_d3d11;
+        player->video_codec->thread_count = 1;     // Hardware decoding does not benefit from frame threads.
+    } else {
+        player->video_codec->thread_count = 0;     // Software decoding: let FFmpeg pick the thread count.
+    }
     avcheck(avcodec_open2(player->video_codec.get(), v_decoder, nullptr), "Open video decoder");
 
     if (avformat_open_input(&player->preview_format, filename.c_str(), nullptr, nullptr) >= 0) {
@@ -411,10 +454,6 @@ hr_player* player_open(const wchar_t* path, int32_t* width, int32_t* height, dou
     player->out_stride = player->out_width * 4;
     player->frame_bgra.resize(static_cast<size_t>(player->out_stride) * player->out_height, 0);
 
-    player->sws = sws_getContext(raw_w, raw_h, player->video_codec->pix_fmt,
-                                 player->out_width, player->out_height, AV_PIX_FMT_BGRA,
-                                 SWS_BILINEAR, nullptr, nullptr, nullptr);
-    if (!player->sws) throw std::runtime_error("Failed to allocate scaler.");
 
     if (player->format->duration > 0) {
         player->duration_sec = static_cast<double>(player->format->duration) / AV_TIME_BASE;
@@ -448,8 +487,12 @@ void player_play(hr_player* ptr) {
     auto* player = reinterpret_cast<PlayerImpl*>(ptr);
     // perform_seek shares the demuxer and decoders with the decode loop, so only the worker may run it.
     if (player->ended) player_seek(ptr, 0.0);
-    player->clock_start_qpc = qpc_100ns();
-    player->clock_start_pts = player->current_pts_sec.load();
+    // A seek still running on the worker (player_seek waits at most 300 ms) restarts the clock itself when it
+    // lands; starting it here from the pre-seek position would pace playback from the wrong point.
+    if (player->seek_done && !player->seek_requested) {
+        player->clock_start_qpc = qpc_100ns();
+        player->clock_start_pts = player->current_pts_sec.load();
+    }
     player->playing = true;
     if (player->audio_playback && player->audio_playback->client) player->audio_playback->client->Start();
     player->cv.notify_one();

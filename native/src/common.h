@@ -90,6 +90,26 @@ struct Apartment {
     Apartment() { if (FAILED(result) && result != RPC_E_CHANGED_MODE) check(result); }
     ~Apartment() { if (SUCCEEDED(result)) RoUninitialize(); }
 };
+// Frame pacing at 60/120 FPS needs sub-millisecond wakeups. std::this_thread::sleep_* rides the system timer
+// (~15.6 ms by default), which makes a 16.7 ms loop wake late and skip or repeat frames. A high-resolution
+// waitable timer (Windows 10 1803+) wakes on time without raising the global timer resolution.
+class PreciseTimer {
+    Handle timer{CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS)};
+public:
+    template <class Rep, class Period>
+    void sleep_for(std::chrono::duration<Rep, Period> duration) {
+        auto ticks = std::chrono::duration_cast<std::chrono::duration<int64_t, std::ratio<1, 10'000'000>>>(duration).count();
+        if (ticks <= 0) return;
+        LARGE_INTEGER due{}; due.QuadPart = -ticks; // Negative: relative, in 100 ns units.
+        if (timer.value && SetWaitableTimer(timer.value, &due, 0, nullptr, nullptr, FALSE) &&
+            WaitForSingleObject(timer.value, INFINITE) == WAIT_OBJECT_0) return;
+        std::this_thread::sleep_for(duration); // Older Windows or a failed timer: coarse but correct.
+    }
+    void sleep_until(std::chrono::steady_clock::time_point deadline) {
+        sleep_for(deadline - std::chrono::steady_clock::now());
+    }
+};
+
 using Emit = std::function<void(int, const AVPacket*, AVRational)>;
 
 struct D3D {
@@ -134,8 +154,9 @@ class AudioCapture {
     std::unique_ptr<Impl> impl;
 public:
     std::vector<Codec> codecs;
+    // note receives non-fatal events, such as capture moving to a new Windows default device.
     AudioCapture(const hr_config& config, int64_t epoch_100ns, Emit emit,
-                 std::function<void(std::string)> fail);
+                 std::function<void(std::string)> fail, std::function<void(std::string)> note = {});
     ~AudioCapture();
     void start();
     void stop();
@@ -169,6 +190,7 @@ struct Session {
 };
 void enumerate(hr_device_callback callback, void* user);
 void validate(const hr_config& config);
+void fit_output(hr_config& config, int source_width, int source_height);
 }
 
 struct hr_session : hr::Session { using Session::Session; };

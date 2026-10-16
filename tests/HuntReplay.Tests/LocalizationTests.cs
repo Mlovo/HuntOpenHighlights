@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using HuntReplay.Core.Configuration;
 using HuntReplay.Core.Localization;
 
 namespace HuntReplay.Tests;
@@ -86,6 +87,22 @@ public static partial class Program
             }
             finally { Text.SetLanguage(original); }
         });
+        Test("first start follows the Windows display language", () =>
+        {
+            var original = System.Globalization.CultureInfo.CurrentUICulture;
+            try
+            {
+                System.Globalization.CultureInfo.CurrentUICulture = new("ru-RU");
+                Equal(Text.Russian, new SystemSettings().Language);
+                System.Globalization.CultureInfo.CurrentUICulture = new("en-US");
+                Equal(Text.English, new SystemSettings().Language);
+                System.Globalization.CultureInfo.CurrentUICulture = new("uk-UA");
+                Equal(Text.English, new SystemSettings().Language);
+            }
+            finally { System.Globalization.CultureInfo.CurrentUICulture = original; }
+        });
+        Test("a saved language survives loading", () =>
+            Equal(Text.English, System.Text.Json.JsonSerializer.Deserialize<StudioSettings>("""{"System":{"Language":"en"}}""", StudioSettings.JsonOptions)!.System.Language));
     }
 
     private static HashSet<int> Placeholders(string value) =>

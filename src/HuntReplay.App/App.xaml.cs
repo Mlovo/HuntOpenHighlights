@@ -101,6 +101,7 @@ public partial class App : Application
                 var wizard = new SetupWizard(status);
                 wizard.ShowDialog();
                 settings.System.FirstRunCompleted = true;
+                settings.System.Language = Text.Language; // The wizard can switch it.
                 store.Save(settings);
             }
             recorder = new RecorderService(settings, log, libraryRoot);
@@ -112,8 +113,19 @@ public partial class App : Application
             if (startInTray) { window.ShowInTaskbar = false; window.WindowState = WindowState.Minimized; }
             window.Show();
             if (startInTray) window.Hide();
-            await Task.Run(() => NvidiaServiceManager.EnsureServicePausedAsync(log));
-            pipe.Start();
+            // NVIDIA's container is paused only when it actually holds the Highlights pipe: no UAC prompt,
+            // stopped service or killed process on systems where the pipe is free.
+            if (!pipe.TryStart(logFailure: false))
+            {
+                if (SelfInstaller.IsNvidiaActive())
+                {
+                    await Task.Run(() => NvidiaServiceManager.EnsureServicePausedAsync(log));
+                    // A stopped container can take a moment to release its pipe instances.
+                    for (int attempt = 1; attempt < 5 && !pipe.TryStart(logFailure: false); attempt++)
+                        await Task.Delay(400);
+                }
+                if (!pipe.IsListening) pipe.TryStart(logFailure: true);
+            }
             await model.InitializeAsync(window);
             if (storageWarning is not null) model.Error(new IOException(storageWarning));
             if (store.LoadWarning is { } loadWarning) model.Error(new InvalidDataException(loadWarning));

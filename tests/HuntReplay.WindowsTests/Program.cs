@@ -10,83 +10,87 @@ using HuntReplay.App.Interop;
 using HuntReplay.App.ViewModels;
 using HuntReplay.Core.Configuration;
 
+using HuntReplay.TestShared;
+
 namespace HuntReplay.WindowsTests;
+
+/// <summary>Every registered WPF test as its own MSTest case, executed on the shared STA thread.</summary>
+[TestClass]
+public sealed class WpfSuite
+{
+    public static IEnumerable<object[]> Cases => StaWorker.Invoke(() => TestRegistry.Rows(Program.RegisterAll));
+    public static string CaseName(System.Reflection.MethodInfo method, object[] row) => (string)row[0];
+
+    [TestMethod]
+    [DynamicData(nameof(Cases), DynamicDataDisplayName = nameof(CaseName))]
+    public void Run(string name) => StaWorker.Run(() => TestRegistry.Run(name));
+}
 
 internal static class Program
 {
-    private static int passed, failed;
+    private static Exception? dispatcherError;
 
-    [STAThread]
-    public static int Main()
+    /// <summary>
+    /// Creates the one WPF Application of this process and records every WPF test with <see cref="TestRegistry"/>.
+    /// Runs on <see cref="StaWorker"/>; <see cref="WpfSuite"/> runs the recorded tests under MSTest.
+    /// </summary>
+    internal static void RegisterAll()
     {
-        try
+        // No window, native backend or real device is required, but real WPF binding,
+        // Selector coercion and dispatcher behavior must run on Windows / STA.
+        if (Application.Current is null)
         {
-            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
-            {
-                Console.WriteLine("CRITICAL UNHANDLED EXCEPTION: " + e.ExceptionObject);
-            };
-            // No window, native backend or real device is required, but real WPF binding,
-            // Selector coercion and dispatcher behavior must run on Windows / STA.
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-            app.DispatcherUnhandledException += (s, e) =>
+            app.DispatcherUnhandledException += (_, e) =>
             {
-                Console.WriteLine("DISPATCHER UNHANDLED EXCEPTION: " + e.Exception);
+                dispatcherError ??= e.Exception; // Fails the test that was running; see Test().
                 e.Handled = true;
-                failed++;
             };
-            foreach (int kind in new[] { 0, 1, 2, 3 })
-            {
-                Test($"device kind {kind}: default survives repeated refresh", () => WithSelector(kind, "", (s, box, read, _) =>
-                {
-                    for (int i = 0; i < 5; i++) { s.Refresh(Devices(kind)); Pump(); Equal("", read()); Equal("", box.SelectedValue); Equal("", SelectedId(box)); }
-                }));
-                Test($"device kind {kind}: explicit ID survives reordered/replaced items", () => WithSelector(kind, "second", (s, box, read, _) =>
-                {
-                    s.Refresh(Devices(kind)); Pump(); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
-                    s.Refresh(Devices(kind).Reverse()); Pump(); Equal("second", read()); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
-                }));
-                Test($"device kind {kind}: unplug preserves ID and inserts unavailable option", () => WithSelector(kind, "second", (s, box, read, _) =>
-                {
-                    s.Refresh(Devices(kind)); Pump();
-                    s.Refresh([]); Pump(); Equal("second", read()); Equal("second", box.SelectedValue);
-                    True(((DeviceOption)box.SelectedItem).Name.Contains("Недоступно"));
-                    s.Refresh(Devices(kind)); Pump(); Equal("second", read()); Equal("second", box.SelectedValue);
-                    Equal("Second", ((DeviceOption)box.SelectedItem).Name);
-                }));
-                Test($"device kind {kind}: transient null cannot erase a saved ID", () => WithSelector(kind, "second", (s, box, read, _) =>
-                {
-                    s.Refresh(Devices(kind)); Pump();
-                    box.SetCurrentValue(ComboBox.SelectedValueProperty, null);
-                    box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump();
-                    Equal("second", read());
-                    s.Refresh(Devices(kind)); Pump(); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
-                }));
-                Test($"device kind {kind}: selecting default is a real editable empty ID", () => WithSelector(kind, "second", (s, box, read, _) =>
-                {
-                    s.Refresh(Devices(kind)); Pump();
-                    box.SetCurrentValue(ComboBox.SelectedValueProperty, "");
-                    box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump(); Equal("", read());
-                    box.SetCurrentValue(ComboBox.SelectedValueProperty, "first");
-                    box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump(); Equal("first", read());
-                }));
-                Test($"device kind {kind}: cloned/replaced settings update the visible selection", () => WithSelector(kind, "second", (s, box, read, replace) =>
-                {
-                    s.Refresh(Devices(kind)); Pump(); replace("first"); s.Refresh(Devices(kind)); Pump();
-                    Equal("first", read()); Equal("first", box.SelectedValue); Equal("first", SelectedId(box));
-                }));
-            }
-            ComboBoxPresentationTests();
-            GalleryViewTrimmingTests.RunAllTests();
-            RangeSliderStressTests.RunAllTests();
-            Application.Current.Shutdown();
-            Console.WriteLine($"\n{passed} WPF regressions passed; {failed} failed.");
-            return failed == 0 ? 0 : 1;
         }
-        catch (Exception ex)
+        foreach (int kind in new[] { 0, 1, 2, 3 })
         {
-            Console.WriteLine("CRITICAL EXCEPTION IN WindowsTests: " + ex);
-            return 1;
+            Test($"device kind {kind}: default survives repeated refresh", () => WithSelector(kind, "", (s, box, read, _) =>
+            {
+                for (int i = 0; i < 5; i++) { s.Refresh(Devices(kind)); Pump(); Equal("", read()); Equal("", box.SelectedValue); Equal("", SelectedId(box)); }
+            }));
+            Test($"device kind {kind}: explicit ID survives reordered/replaced items", () => WithSelector(kind, "second", (s, box, read, _) =>
+            {
+                s.Refresh(Devices(kind)); Pump(); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
+                s.Refresh(Devices(kind).Reverse()); Pump(); Equal("second", read()); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
+            }));
+            Test($"device kind {kind}: unplug preserves ID and inserts unavailable option", () => WithSelector(kind, "second", (s, box, read, _) =>
+            {
+                s.Refresh(Devices(kind)); Pump();
+                s.Refresh([]); Pump(); Equal("second", read()); Equal("second", box.SelectedValue);
+                True(((DeviceOption)box.SelectedItem).Name.Contains("Недоступно"));
+                s.Refresh(Devices(kind)); Pump(); Equal("second", read()); Equal("second", box.SelectedValue);
+                Equal("Second", ((DeviceOption)box.SelectedItem).Name);
+            }));
+            Test($"device kind {kind}: transient null cannot erase a saved ID", () => WithSelector(kind, "second", (s, box, read, _) =>
+            {
+                s.Refresh(Devices(kind)); Pump();
+                box.SetCurrentValue(ComboBox.SelectedValueProperty, null);
+                box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump();
+                Equal("second", read());
+                s.Refresh(Devices(kind)); Pump(); Equal("second", box.SelectedValue); Equal("second", SelectedId(box));
+            }));
+            Test($"device kind {kind}: selecting default is a real editable empty ID", () => WithSelector(kind, "second", (s, box, read, _) =>
+            {
+                s.Refresh(Devices(kind)); Pump();
+                box.SetCurrentValue(ComboBox.SelectedValueProperty, "");
+                box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump(); Equal("", read());
+                box.SetCurrentValue(ComboBox.SelectedValueProperty, "first");
+                box.GetBindingExpression(ComboBox.SelectedValueProperty)!.UpdateSource(); Pump(); Equal("first", read());
+            }));
+            Test($"device kind {kind}: cloned/replaced settings update the visible selection", () => WithSelector(kind, "second", (s, box, read, replace) =>
+            {
+                s.Refresh(Devices(kind)); Pump(); replace("first"); s.Refresh(Devices(kind)); Pump();
+                Equal("first", read()); Equal("first", box.SelectedValue); Equal("first", SelectedId(box));
+            }));
         }
+        ComboBoxPresentationTests();
+        GalleryViewTrimmingTests.RunAllTests();
+        RangeSliderStressTests.RunAllTests();
     }
 
     // Production ComboBox templates: the theme is parsed from src/HuntReplay.App/Themes (Palette.Dark.xaml + Controls.xaml).
@@ -265,16 +269,12 @@ internal static class Program
         Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => frame.Continue = false));
         Dispatcher.PushFrame(frame);
     }
-    internal static void Test(string name, Action test)
+    internal static void Test(string name, Action test) => TestRegistry.Add(name, () =>
     {
-        try { test(); passed++; Console.WriteLine("PASS " + name); }
-        catch (Exception ex)
-        {
-            failed++; Console.WriteLine("FAIL " + name + ": " + ex);
-            if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
-                Console.WriteLine("::error title=WPF binding regression::" + (name + ": " + ex).Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A"));
-        }
-    }
+        dispatcherError = null;
+        test();
+        if (dispatcherError is { } error) throw new InvalidOperationException("Unhandled dispatcher exception: " + error.Message, error);
+    });
     internal static void True(bool value) { if (!value) throw new InvalidOperationException("Expected true"); }
     internal static void False(bool value) => True(!value);
     internal static void Equal(object? expected, object? actual)

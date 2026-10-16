@@ -3,7 +3,7 @@ using Google.Protobuf;
 using HuntReplay.Protocol;
 using HuntReplay.Protocol.Generated;
 
-namespace HuntReplay.Tests;
+namespace HuntReplay.PipeSmoke;
 
 /// <summary>An explicit developer tool, never included in the recorder. No game injection or keyboard input.</summary>
 internal static class LivePipeSmoke

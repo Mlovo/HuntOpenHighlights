@@ -160,11 +160,12 @@ struct AudioCapture::Impl {
     std::wstring output_id, microphone_id;
     int64_t epoch;
     Emit emit;
-    std::function<void(std::string)> fail;
+    std::function<void(std::string)> fail, note;
     std::jthread thread;
     std::promise<void> ready;
-    explicit Impl(AudioCapture& parent, const hr_config& source, int64_t epoch_100ns, Emit emit, std::function<void(std::string)> fail)
-        : owner(parent), config(source), epoch(epoch_100ns), emit(std::move(emit)), fail(std::move(fail)) {
+    explicit Impl(AudioCapture& parent, const hr_config& source, int64_t epoch_100ns, Emit emit,
+                  std::function<void(std::string)> fail, std::function<void(std::string)> note)
+        : owner(parent), config(source), epoch(epoch_100ns), emit(std::move(emit)), fail(std::move(fail)), note(std::move(note)) {
         output_id = source.output_device ? source.output_device : L"";
         microphone_id = source.microphone_device ? source.microphone_device : L"";
     }
@@ -188,21 +189,39 @@ struct AudioCapture::Impl {
             struct PriorityGuard { HANDLE h; ~PriorityGuard() { if (h) AvRevertMmThreadCharacteristics(h); } } priority_guard{priority};
             ComPtr<IMMDeviceEnumerator> enumerator;
             check(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator)));
-            Endpoint game(enumerator.Get(), output_id.c_str(), true, epoch);
+            auto game = std::make_unique<Endpoint>(enumerator.Get(), output_id.c_str(), true, epoch);
             std::unique_ptr<Endpoint> mic;
             if (config.microphone_enabled) mic = std::make_unique<Endpoint>(enumerator.Get(), microphone_id.c_str(), false, epoch);
-            check(game.client->Start());
+            check(game->client->Start());
             if (mic) check(mic->client->Start());
             ready.set_value(); signaled = true;
             int frame_samples = owner.codecs[0]->frame_size;
             int64_t cursor = 0;
-            HANDLE events[]{game.event.value, mic ? mic->event.value : game.event.value};
-            auto check_default = [&](EDataFlow flow, const Endpoint& endpoint) {
+            HANDLE events[]{game->event.value, mic ? mic->event.value : game->event.value};
+            // Endpoints that follow the Windows default device are reopened in place when the default changes or the
+            // device disappears. The PCM timeline only gets a short silent gap; encoding and video never stop.
+            // An explicitly selected device that disappears still ends the session, since nothing can replace it.
+            auto reopen = [&](std::unique_ptr<Endpoint>& endpoint, bool loopback, const char* what) {
+                if (endpoint) endpoint->client->Stop(); // Best effort: an invalidated client may refuse.
+                endpoint = std::make_unique<Endpoint>(enumerator.Get(), L"", loopback, epoch);
+                check(endpoint->client->Start());
+                events[0] = game->event.value;
+                events[1] = mic ? mic->event.value : game->event.value;
+                if (note) note(std::string(what) + " changed; recording continues on the new Windows default device.");
+            };
+            auto follow_default = [&](std::unique_ptr<Endpoint>& endpoint, EDataFlow flow, bool loopback, const char* what) {
                 ComPtr<IMMDevice> current;
                 check(enumerator->GetDefaultAudioEndpoint(flow, eConsole, &current));
                 LPWSTR id = nullptr; check(current->GetId(&id));
-                bool changed = endpoint.device_id != id; CoTaskMemFree(id);
-                if (changed) throw std::runtime_error("Default audio endpoint changed; restart buffer to use the new device.");
+                bool changed = endpoint->device_id != id; CoTaskMemFree(id);
+                if (changed) reopen(endpoint, loopback, what);
+            };
+            auto read = [&](std::unique_ptr<Endpoint>& endpoint, bool follows_default, bool loopback, const char* what) {
+                try { endpoint->read(); }
+                catch (const winrt::hresult_error& e) {
+                    if (!follows_default || e.code() != AUDCLNT_E_DEVICE_INVALIDATED) throw;
+                    reopen(endpoint, loopback, what);
+                }
             };
             auto next_device_check = Clock::now() + std::chrono::seconds(1);
             // One PCM frame per track, allocated once. av_frame_make_writable only copies if the encoder still holds it.
@@ -220,7 +239,7 @@ struct AudioCapture::Impl {
                         avcheck(av_frame_make_writable(frame), "Reuse AAC frame");
                         frame->pts = cursor;
                         for (int s = 0; s < frame_samples; ++s) for (int channel = 0; channel < 2; ++channel) {
-                            float g = game.timeline.get(cursor + s, channel);
+                            float g = game->timeline.get(cursor + s, channel);
                             float m = mic ? mic->timeline.get(cursor + s, channel) * config.microphone_gain : 0;
                             float value = config.separate_microphone ? (i == 0 ? g : m) : g + m;
                             reinterpret_cast<float*>(frame->data[channel])[s] = std::clamp(value, -1.f, 1.f);
@@ -235,22 +254,23 @@ struct AudioCapture::Impl {
             while (!stop.stop_requested()) {
                 DWORD wait = WaitForMultipleObjects(mic ? 2 : 1, events, FALSE, 10);
                 if (wait == WAIT_FAILED) check(HRESULT_FROM_WIN32(GetLastError()));
-                game.read(); if (mic) mic->read();
+                read(game, output_id.empty(), true, "Default audio output");
+                if (mic) read(mic, microphone_id.empty(), false, "Default microphone");
                 if (Clock::now() >= next_device_check) {
-                    if (output_id.empty()) check_default(eRender, game);
-                    if (mic && microphone_id.empty()) check_default(eCapture, *mic);
+                    if (output_id.empty()) follow_default(game, eRender, true, "Default audio output");
+                    if (mic && microphone_id.empty()) follow_default(mic, eCapture, false, "Default microphone");
                     next_device_check = Clock::now() + std::chrono::seconds(1);
                 }
                 // A bounded 120ms jitter buffer on the shared video/WASAPI QPC timeline.
                 encode_until(av_rescale(qpc_100ns() - epoch, rate, 10'000'000) - rate * 120 / 1000);
             }
-            game.read(); if (mic) mic->read();
+            game->read(); if (mic) mic->read();
             encode_until(av_rescale(qpc_100ns() - epoch, rate, 10'000'000));
-            game.client->Stop(); if (mic) mic->client->Stop();
+            game->client->Stop(); if (mic) mic->client->Stop();
             for (int i = 0; i < static_cast<int>(owner.codecs.size()); ++i) drain(i, true);
         } catch (const winrt::hresult_error& e) {
             if (!signaled) ready.set_exception(std::current_exception());
-            else fail("WASAPI: " + winrt::to_string(e.message()) + " (endpoint changed or disconnected; restart buffer)");
+            else fail("WASAPI: " + winrt::to_string(e.message()) + " (selected device disconnected; restart buffer)");
         } catch (const std::exception& e) {
             if (!signaled) ready.set_exception(std::current_exception()); else fail(std::string("Audio: ") + e.what());
         } catch (...) {
@@ -258,8 +278,9 @@ struct AudioCapture::Impl {
         }
     }
 };
-AudioCapture::AudioCapture(const hr_config& config, int64_t epoch, Emit emit, std::function<void(std::string)> fail)
-    : impl(std::make_unique<Impl>(*this, config, epoch, std::move(emit), std::move(fail))) {
+AudioCapture::AudioCapture(const hr_config& config, int64_t epoch, Emit emit, std::function<void(std::string)> fail,
+                           std::function<void(std::string)> note)
+    : impl(std::make_unique<Impl>(*this, config, epoch, std::move(emit), std::move(fail), std::move(note))) {
     codecs.push_back(audio_encoder());
     if (config.microphone_enabled && config.separate_microphone) codecs.push_back(audio_encoder());
 }

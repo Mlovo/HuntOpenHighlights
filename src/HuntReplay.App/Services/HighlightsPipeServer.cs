@@ -23,28 +23,30 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
     public event Action? StateChanged;
     public IReadOnlyCollection<(uint Pid, string Game)> Games => games.Values.ToArray();
 
-    public void Start()
+    public void Start() => TryStart(logFailure: true);
+
+    /// <summary>
+    /// Claims the Highlights pipe. Returns false when another server holds it; with logFailure false the caller
+    /// can react first (for example pause NVIDIA's container) and retry without an error in the log.
+    /// </summary>
+    public bool TryStart(bool logFailure)
     {
-        if (listener is not null) return;
+        if (listener is not null) return true;
         try
         {
             // FirstPipeInstance detects NVIDIA/Python/another user's server instead of hijacking it.
             var first = NewPipe(first: true);
             listening = true;
+            Failure = null;
             listener = Task.Run(() => ListenAsync(first));
             log.Write(Text.Format("Ipc.Listening", @"\\.\pipe\" + PipeName));
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            if (SelfInstaller.IsNvidiaActive())
-            {
-                Failure = Text.Get("Ipc.BusyNvidia");
-            }
-            else
-            {
-                Failure = Text.Format("Ipc.BusyOther", ex.Message);
-            }
-            log.Write(Failure, "ERROR");
+            Failure = SelfInstaller.IsNvidiaActive() ? Text.Get("Ipc.BusyNvidia") : Text.Format("Ipc.BusyOther", ex.Message);
+            if (logFailure) log.Write(Failure, "ERROR");
+            return false;
         }
     }
 

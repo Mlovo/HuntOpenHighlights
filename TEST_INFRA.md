@@ -25,7 +25,7 @@ tests/HuntReplay.E2ETests/
 ├── Tier2_BoundaryTests.cs           # Tier 2: Boundary conditions & corner cases (13 tests)
 ├── Tier3_CrossFeatureTests.cs       # Tier 3: Cross-feature combinations & pairwise workflows (6 tests)
 ├── Tier4_RealWorldScenariosTests.cs # Tier 4: Real-world gameplay highlight scenarios (5 tests)
-└── Program.cs                       # STA CLI runner, test coordinator & exit code generator
+└── Program.cs                       # MSTest entry: registers the four tiers as test cases on one STA thread
 ```
 
 ### Tier 1: Feature Coverage (Isolated Happy Path) — 15 Tests
@@ -83,17 +83,34 @@ Validates complete user workflows matching real game replay usage:
 
 ## 3. Test Runner & Execution Methods
 
+All three suites (`HuntReplay.Tests`, `HuntReplay.WindowsTests`, `HuntReplay.E2ETests`) are MSTest projects on
+Microsoft.Testing.Platform. Each project is a self-running test executable; every `Test("name", ...)` in the suites is
+reported as its own test case. The WPF suites run on one shared STA thread (`tests/Shared/StaWorker.cs`).
+
 ### Method 1: .NET CLI Direct Execution
 ```powershell
 dotnet run --project tests/HuntReplay.E2ETests
 ```
-Expected output: 39 passed, 0 failed, exit code 0.
+Expected output: `total: 39, failed: 0, succeeded: 39`, exit code 0.
+
+Run a subset by test name (each E2E case name starts with its tier):
+```powershell
+dotnet run --project tests/HuntReplay.E2ETests -- --filter "Name~Tier 2"
+dotnet run --project tests/HuntReplay.Tests -- --filter "Name~trim"
+dotnet run --project tests/HuntReplay.Tests -- --list-tests
+```
 
 ### Method 2: Full Solution Build & Verification
 ```powershell
 dotnet build HuntReplayStudio.sln
 dotnet run --project tests/HuntReplay.Tests
+dotnet run --project tests/HuntReplay.WindowsTests
 dotnet run --project tests/HuntReplay.E2ETests
+```
+
+### Manual: live IPC smoke check against a running Studio
+```powershell
+dotnet run --project tools/PipeSmoke -- --multi
 ```
 
 ---

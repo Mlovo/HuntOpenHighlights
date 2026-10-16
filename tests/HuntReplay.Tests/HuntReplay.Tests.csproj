@@ -1,14 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <PropertyGroup>
+    <!-- MSTest on Microsoft.Testing.Platform: the project is a self-running test executable (dotnet run). -->
+    <OutputType>Exe</OutputType>
+    <EnableMSTestRunner>true</EnableMSTestRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MSTest.TestAdapter" Version="4.4.1" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.4.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <ProjectReference Include="../../src/HuntReplay.Core/HuntReplay.Core.csproj" />
     <ProjectReference Include="../../src/HuntReplay.Protocol/HuntReplay.Protocol.csproj" />
     <Content Include="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
-    <!-- Pure production view-model and label code; WPF-dependent files stay out of this Linux suite. -->
-    <!-- Process and ffmpeg helpers shared by the media suites. -->
+    <!-- Shared test infrastructure. -->
     <Compile Include="../Shared/MediaTestKit.cs" Link="Shared/MediaTestKit.cs" />
+    <Compile Include="../Shared/TestRegistry.cs" Link="Shared/TestRegistry.cs" />
+    <!-- Pure production view-model and label code; WPF-dependent files stay out of this Linux suite. -->
     <Compile Include="../../src/HuntReplay.App/Interop/DeviceOption.cs" Link="Production/DeviceOption.cs" />
-    <Compile Include="../../src/HuntReplay.App/ViewModels/ObservableObject.cs" Link="Production/ObservableObject.cs" />
+    <Compile Include="../../src/HuntReplay.App/ViewModels/Choice.cs" Link="Production/Choice.cs" />
     <Compile Include="../../src/HuntReplay.App/ViewModels/DeviceSelectionViewModel.cs" Link="Production/DeviceSelectionViewModel.cs" />
   </ItemGroup>
 </Project>
