@@ -56,6 +56,14 @@ public static partial class Program
             True(AppUpdate.ParseSha256Digest("sha256:" + new string('g', 64)) is null);
             True(Release(digest: "").Sha256 is null);
         });
+        Test("update notes drop links that cannot be clicked in a message box", () =>
+        {
+            True(AppUpdate.PlainNotes("**Full Changelog**: https://github.com/Mlovo/HuntOpenHighlights/compare/v0.1.8...v0.1.9") is null);
+            True(AppUpdate.PlainNotes(null) is null);
+            Equal("What's Changed\n• Faster export by @Mlovo\n• See the guide\n\nFixed crash",
+                AppUpdate.PlainNotes("## What's Changed\r\n* Faster export by @Mlovo in https://github.com/Mlovo/HuntOpenHighlights/pull/7\r\n" +
+                    "- See [the guide](https://example.com/guide)\r\n\r\n\r\n**Fixed** crash\r\n\r\n**Full Changelog**: https://github.com/x/y/compare/a...b"));
+        });
         Test("update version comparison", () =>
         {
             True(AppUpdate.IsNewer("0.2.0", "0.1.9")); True(AppUpdate.IsNewer("0.1.10", "0.1.9"));

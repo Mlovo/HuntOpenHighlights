@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace HuntReplay.Core.Updates;
 
@@ -33,6 +34,35 @@ public static class AppUpdate
         return new(Prop(root, "tag_name").TrimStart('v', 'V').Trim(), IsTrustedPageUrl(page) ? page : null,
             notes.Length == 0 ? null : notes, assetUrl, sha256);
     }
+
+    /// <summary>
+    /// Release notes as plain text for a message box: links cannot be clicked there, so URLs and lines that were only a
+    /// link ("**Full Changelog**: https://...") go, and Markdown markers become plain text. Null when nothing is left.
+    /// </summary>
+    public static string? PlainNotes(string? markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return null;
+        var lines = new List<string>();
+        foreach (var raw in markdown.Replace("\r", "").Split('\n'))
+        {
+            if (string.IsNullOrWhiteSpace(raw)) { lines.Add(""); continue; } // Paragraph break.
+            var line = Url.Replace(Link.Replace(raw, "$1"), "").Replace("**", "").Replace("__", "").Replace("`", "").TrimEnd();
+            line = TrailingIn.Replace(line, ""); // GitHub's generated notes: "* Change by @user in <PR link>".
+            var content = line.TrimStart('#', ' ', '\t');
+            // Drop lines that were only a link, including a label pointing at it.
+            if (content.TrimEnd(':').Trim().Length == 0 || content.EndsWith(':') && raw.Contains("://", StringComparison.Ordinal)) continue;
+            if (line.TrimStart().StartsWith('#')) line = content;
+            else if (line.TrimStart() is ['*' or '-', ' ', ..] item) line = "• " + item[2..];
+            lines.Add(line);
+        }
+        var text = string.Join('\n', lines).Trim();
+        while (text.Contains("\n\n\n", StringComparison.Ordinal)) text = text.Replace("\n\n\n", "\n\n");
+        return text.Length == 0 ? null : text;
+    }
+
+    private static readonly Regex Link = new(@"\[([^\]]*)\]\([^)]*\)", RegexOptions.CultureInvariant);
+    private static readonly Regex Url = new(@"<?https?://\S+?>?(?=[\s)\]]|$)", RegexOptions.CultureInvariant);
+    private static readonly Regex TrailingIn = new(@"\s+in\s*$", RegexOptions.CultureInvariant);
 
     public static bool IsNewer(string latest, string current) =>
         Version.TryParse(latest, out var l) && Version.TryParse(current, out var c) && l > c;

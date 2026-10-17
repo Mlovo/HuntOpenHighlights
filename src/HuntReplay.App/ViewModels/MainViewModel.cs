@@ -793,7 +793,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         var owner = Application.Current.MainWindow;
         var prompt = Loc.Format("Update.ConfirmPrompt", target.Version, AppVersion);
         if (status.Running) prompt += "\n\n" + Loc["Update.ConfirmRecording"];
-        if (target.Notes is { } notes) prompt += "\n\n" + (notes.Length > 1200 ? notes[..1200].TrimEnd() + "…" : notes.Trim());
+        if (AppUpdate.PlainNotes(target.Notes) is { } notes) prompt += "\n\n" + (notes.Length > 1200 ? notes[..1200].TrimEnd() + "…" : notes.Trim());
         if (MessageBox.Show(owner, prompt, Loc["Update.ConfirmTitle"], MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         while (true)
         {
