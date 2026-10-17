@@ -271,6 +271,7 @@ public static partial class Program
         DeviceSelectionTests();
         PlaybackDiagnosticsTests();
         LocalizationTests();
+        UpdateTests();
         PayloadArenaTests();
         VideoTrimmingTestsAsync().GetAwaiter().GetResult(); // Registers only; trim bodies run later as MSTest cases.
     }

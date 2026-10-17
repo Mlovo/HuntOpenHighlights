@@ -14,6 +14,7 @@ using HuntReplay.Core.Configuration;
 using HuntReplay.Core.Localization;
 using HuntReplay.Core.Media;
 using HuntReplay.Core.Storage;
+using HuntReplay.Core.Updates;
 using Microsoft.Win32;
 
 namespace HuntReplay.App.ViewModels;
@@ -48,7 +49,11 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private RecorderStatus status = new(false, default, default, "", 0, 0);
     private bool busy, setupReady;
     private bool hasUpdate, isCheckingUpdate;
-    private string? latestVersion, updateUrl;
+    private string? latestVersion;
+    private ReleaseInfo? release;
+    // Set while an update downloads; the header button cancels it.
+    private CancellationTokenSource? updateDownload;
+    private double updateProgress;
     private string search = "";
     private ClipViewModel? selectedClip;
     public IReadOnlyList<DeviceOption> Devices { get; private set; } = [];
@@ -186,7 +191,9 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public bool HasUpdate => hasUpdate;
     public bool IsCheckingUpdate => isCheckingUpdate;
     public string? LatestVersion => latestVersion;
-    public string UpdateButtonLabel => string.IsNullOrWhiteSpace(latestVersion) ? Loc["Header.UpdateAvailable"] : string.Format(Loc["Header.UpdateAvailableVersion"], latestVersion);
+    public string UpdateButtonLabel => updateDownload is not null ? Loc.Format("Header.UpdateDownloading", (int)(updateProgress * 100)) :
+        string.IsNullOrWhiteSpace(latestVersion) ? Loc["Header.UpdateAvailable"] : string.Format(Loc["Header.UpdateAvailableVersion"], latestVersion);
+    public string UpdateButtonTooltip => updateDownload is not null ? Loc["Header.UpdateCancelTooltip"] : Loc["Header.UpdateTooltip"];
     public string UpdateStatusLabel => isCheckingUpdate ? Loc["Update.Checking"] :
         hasUpdate ? Loc.Format("Update.VersionAvailable", latestVersion) : Loc["Update.UpToDate"];
     public IRelayCommand ToggleBufferCommand { get; }
@@ -206,7 +213,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IRelayCommand OpenLogsCommand { get; }
     public IRelayCommand SelectRecentCommand { get; }
     public IRelayCommand CheckUpdateCommand { get; }
-    public IRelayCommand OpenUpdateCommand { get; }
+    public IRelayCommand InstallUpdateCommand { get; }
     public IRelayCommand ToggleLanguageCommand { get; }
     public IRelayCommand ToggleThemeCommand { get; }
     public IRelayCommand PreviewOverlayCommand { get; }
@@ -332,7 +339,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         OpenLogsCommand = new RelayCommand(() => Safe(() => DesktopIntegration.OpenFolder(log.DirectoryPath)));
         SelectRecentCommand = new RelayCommand<object?>(value => { if (value is ClipViewModel clip) { Page = "Gallery"; SelectedClip = clip; } });
         CheckUpdateCommand = Async(CheckUpdateManualAsync);
-        OpenUpdateCommand = new RelayCommand(() => Safe(OpenUpdatePage));
+        InstallUpdateCommand = new RelayCommand(() => { if (updateDownload is { } download) download.Cancel(); else _ = InstallUpdateAsync(); });
         ToggleLanguageCommand = new RelayCommand(() => Safe(ToggleLanguage));
         ThemeSvc.SetTheme(recorder.Settings.System.Theme);
         ToggleThemeCommand = new RelayCommand(() => Safe(ToggleTheme));
@@ -724,16 +731,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             await Task.Delay(2500, token); // Let the app start up and render before network I/O
             var res = await UpdateCheckerService.CheckForUpdatesAsync(token);
             if (token.IsCancellationRequested) return;
-            OnUi(() =>
-            {
-                hasUpdate = res.HasUpdate;
-                latestVersion = res.LatestVersion;
-                updateUrl = res.ReleaseUrl;
-                OnPropertyChanged(nameof(HasUpdate));
-                OnPropertyChanged(nameof(LatestVersion));
-                OnPropertyChanged(nameof(UpdateButtonLabel));
-                OnPropertyChanged(nameof(UpdateStatusLabel));
-            });
+            OnUi(() => ApplyUpdateCheck(res));
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -751,13 +749,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             var res = await Task.Run(() => UpdateCheckerService.CheckForUpdatesAsync(stop.Token));
-            hasUpdate = res.HasUpdate;
-            latestVersion = res.LatestVersion;
-            updateUrl = res.ReleaseUrl;
-            OnPropertyChanged(nameof(HasUpdate));
-            OnPropertyChanged(nameof(LatestVersion));
-            OnPropertyChanged(nameof(UpdateButtonLabel));
-            OnPropertyChanged(nameof(UpdateStatusLabel));
+            if (updateDownload is not null) return; // A check must not swap the release an install is using.
+            ApplyUpdateCheck(res);
 
             if (res.HasUpdate)
             {
@@ -780,13 +773,97 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private void OpenUpdatePage()
+    private void ApplyUpdateCheck(UpdateCheckResult res)
     {
-        // The URL comes from a network response; only this repository's GitHub pages are opened.
-        const string releases = "https://github.com/Mlovo/HuntOpenHighlights/releases";
-        var url = Uri.TryCreate(updateUrl, UriKind.Absolute, out var parsed) && parsed.Scheme == Uri.UriSchemeHttps &&
-            parsed.Host == "github.com" && parsed.AbsolutePath.StartsWith("/Mlovo/HuntOpenHighlights/", StringComparison.Ordinal)
-            ? parsed.AbsoluteUri : releases;
+        if (updateDownload is not null) return;
+        hasUpdate = res.HasUpdate;
+        latestVersion = res.LatestVersion;
+        release = res.Release;
+        OnPropertyChanged(nameof(HasUpdate));
+        OnPropertyChanged(nameof(LatestVersion));
+        OnPropertyChanged(nameof(UpdateButtonLabel));
+        OnPropertyChanged(nameof(UpdateStatusLabel));
+    }
+
+    public void ReportUpdated() => Message = Loc.Format("Update.Installed", AppVersion);
+
+    private async Task InstallUpdateAsync()
+    {
+        if (release is not { } target) return;
+        var owner = Application.Current.MainWindow;
+        var prompt = Loc.Format("Update.ConfirmPrompt", target.Version, AppVersion);
+        if (status.Running) prompt += "\n\n" + Loc["Update.ConfirmRecording"];
+        if (target.Notes is { } notes) prompt += "\n\n" + (notes.Length > 1200 ? notes[..1200].TrimEnd() + "…" : notes.Trim());
+        if (MessageBox.Show(owner, prompt, Loc["Update.ConfirmTitle"], MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        while (true)
+        {
+            try
+            {
+                await DownloadAndInstallAsync(target);
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                Message = Loc["Update.DownloadCancelled"];
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Every failure is explained, with the choice to try again or to download the release by hand.
+                log.Write("Update failed: " + ex, "ERROR");
+                Message = Loc.Format("Update.InstallFailed", ex.Message);
+                if (stop.IsCancellationRequested) return;
+                var dialog = new UpdateFailedDialog(ex.Message) { Owner = owner };
+                dialog.ShowDialog();
+                if (dialog.Choice == UpdateFailedChoice.Retry) continue;
+                if (dialog.Choice == UpdateFailedChoice.OpenReleases) Safe(() => OpenReleasePage(target.PageUrl));
+                return;
+            }
+        }
+    }
+
+    private async Task DownloadAndInstallAsync(ReleaseInfo target)
+    {
+        using var download = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+        updateDownload = download;
+        SetUpdateProgress(0);
+        Message = Loc.Format("Update.Downloading", target.Version);
+        try
+        {
+            // Created on the UI thread, so reports arrive there.
+            var progress = new Progress<double>(SetUpdateProgress);
+            var staged = await Task.Run(() => UpdateInstallerService.DownloadAsync(target, progress, download.Token));
+            download.Token.ThrowIfCancellationRequested();
+            Message = Loc["Update.Installing"];
+            UpdateInstallerService.Install(staged);
+        }
+        finally
+        {
+            updateDownload = null;
+            SetUpdateProgress(0);
+        }
+        try { UpdateInstallerService.Restart(portable); }
+        catch (Exception ex)
+        {
+            // The new version is already in place; it runs from the next start.
+            Error(new InvalidOperationException(Loc.Format("Update.RestartFailed", ex.Message), ex));
+            return;
+        }
+        log.Write(Loc.Format("Update.Restarting", target.Version));
+        await ((App)Application.Current).ExitAsync();
+    }
+
+    private void SetUpdateProgress(double value)
+    {
+        updateProgress = value;
+        OnPropertyChanged(nameof(UpdateButtonLabel));
+        OnPropertyChanged(nameof(UpdateButtonTooltip));
+    }
+
+    private static void OpenReleasePage(string? pageUrl)
+    {
+        // The URL comes from a network response; ReleaseInfo keeps it only when it is this repository's page.
+        var url = AppUpdate.IsTrustedPageUrl(pageUrl) ? pageUrl! : AppUpdate.ReleasesPage;
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 

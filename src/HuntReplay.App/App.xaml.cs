@@ -60,6 +60,8 @@ public partial class App : Application
         {
             if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
                 throw new PlatformNotSupportedException(Text.Get("Startup.UnsupportedWindows"));
+            // After a self-update the previous process still holds the single-instance mutex until it exits.
+            await UpdateInstallerService.FinishAsync(e.Args);
             using var identity = WindowsIdentity.GetCurrent();
             var sid = identity.User?.Value ?? Environment.UserName;
             var name = @"Local\HuntReplayStudio." + sid;
@@ -129,6 +131,7 @@ public partial class App : Application
             await model.InitializeAsync(window);
             if (storageWarning is not null) model.Error(new IOException(storageWarning));
             if (store.LoadWarning is { } loadWarning) model.Error(new InvalidDataException(loadWarning));
+            if (e.Args.Contains(UpdateInstallerService.UpdatedFromArgument)) model.ReportUpdated();
             log.Write(Text.Get("Log.Ready"));
         }
         catch (Exception ex)
