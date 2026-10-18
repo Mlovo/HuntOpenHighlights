@@ -258,14 +258,16 @@ void VideoEncoder::rebuild_processor(int width, int height) {
     d3d.video_context->VideoProcessorSetOutputColorSpace(processor.Get(), &yuv);
     D3D11_VIDEO_COLOR black{}; black.YCbCr.Y = 16.f / 255.f; black.YCbCr.Cb = .5f; black.YCbCr.Cr = .5f; black.YCbCr.A = 1.f;
     d3d.video_context->VideoProcessorSetOutputBackgroundColor(processor.Get(), TRUE, &black);
-    RECT source{0, 0, width, height};
-    double scale = std::min(double(codec->width) / width, double(codec->height) / height);
-    int outw = (int(width * scale) / 2) * 2, outh = (int(height * scale) / 2) * 2;
-    int x = ((codec->width - outw) / 4) * 2, y = ((codec->height - outh) / 4) * 2;
-    RECT target{x, y, x + outw, y + outh};
+    // Scale to fill and crop the overhang evenly instead of letterboxing: some drivers ignore the YCbCr background
+    // color or leave unwritten NV12 texels, which shows up as teal or green bars around the picture.
+    double scale = std::max(double(codec->width) / width, double(codec->height) / height);
+    int srcw = std::clamp(int(std::lround(codec->width / scale)), 1, width);
+    int srch = std::clamp(int(std::lround(codec->height / scale)), 1, height);
+    int x = (width - srcw) / 2, y = (height - srch) / 2;
+    RECT source{x, y, x + srcw, y + srch};
     RECT output{0, 0, codec->width, codec->height};
     d3d.video_context->VideoProcessorSetStreamSourceRect(processor.Get(), 0, TRUE, &source);
-    d3d.video_context->VideoProcessorSetStreamDestRect(processor.Get(), 0, TRUE, &target);
+    d3d.video_context->VideoProcessorSetStreamDestRect(processor.Get(), 0, TRUE, &output);
     d3d.video_context->VideoProcessorSetOutputTargetRect(processor.Get(), TRUE, &output);
     input_width = width; input_height = height;
 }
