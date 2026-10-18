@@ -2,6 +2,23 @@
 
 All notable changes to **HuntReplay Studio** are documented in this file.
 
+## [0.2.0] - 2026-10-18
+
+### Added
+- **In-place updates**: the header update button downloads the new HuntReplayStudio.exe from the latest GitHub release, verifies its SHA-256 digest, replaces the running executable and restarts. The download can be cancelled; any failure is explained with options to retry or open the releases page.
+- **Support card** in the sidebar with a GitHub link and wallet addresses to copy.
+
+### Changed
+- Release notes in the update confirmation are shown as plain text, without raw links or Markdown.
+- Gallery hides clip details until a clip is selected and trims long labels; ComboBox text trims instead of overflowing.
+
+### Fixed
+- Recordings could show teal or green bars around the picture: captured frames now fill the output instead of being letterboxed.
+- A saved GPU is resolved by ID, name or legacy index, so Settings and the capture engine agree after upgrades or adapter reordering.
+- Mouse wheel over the gallery clip list did not scroll the page.
+
+---
+
 ## [0.1.9] - 2026-10-16
 
 ### Added
