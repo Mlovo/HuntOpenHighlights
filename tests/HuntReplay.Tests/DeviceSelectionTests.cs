@@ -162,6 +162,45 @@ public static partial class Program
             Equal("1", selector.SelectedId);
             Equal("NVIDIA GeForce RTX 4090", selector.Options[2].Name);
         });
+        // Native IDs since v0.1.8: the adapter description, unless two adapters share it.
+        DeviceOption[] laptop =
+        [
+            new(3, "Intel(R) Iris(R) Xe Graphics", "Intel(R) Iris(R) Xe Graphics", IsDefault: true, Vendor: 0x8086),
+            new(3, "NVIDIA GeForce RTX 3050 Ti Laptop GPU", "NVIDIA GeForce RTX 3050 Ti Laptop GPU", Vendor: 0x10de)
+        ];
+        Test("saved gpu survives a restart even when the adapter order changes", () =>
+        {
+            string saved = "";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh(laptop);
+            selector.SelectedId = "NVIDIA GeForce RTX 3050 Ti Laptop GPU";
+            var restarted = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            restarted.Refresh([laptop[1], laptop[0]]);
+            Equal("NVIDIA GeForce RTX 3050 Ti Laptop GPU", restarted.SelectedId);
+            Equal(3, restarted.Options.Count);
+            False(restarted.Options.Any(d => d.Name.Contains("Недоступно")));
+        });
+        Test("gpu index saved by an older build shows the adapter the recorder uses instead of unavailable", () =>
+        {
+            string saved = "1";
+            var selector = new DeviceSelectionViewModel(3, "Авто", () => saved, value => saved = value);
+            selector.Refresh(laptop);
+            Equal("NVIDIA GeForce RTX 3050 Ti Laptop GPU", selector.SelectedId);
+            Equal(3, selector.Options.Count);
+            Equal("1", saved);
+            Equal("NVIDIA GeForce RTX 3050 Ti Laptop GPU", DeviceOption.ResolveGpu(saved, laptop)?.Id);
+            // Picking the shown adapter again replaces the old index with the stable ID.
+            selector.SelectedId = "NVIDIA GeForce RTX 3050 Ti Laptop GPU";
+            Equal("NVIDIA GeForce RTX 3050 Ti Laptop GPU", saved);
+        });
+        Test("gpu saved by name resolves regardless of case and surrounding spaces", () =>
+        {
+            Equal("Intel(R) Iris(R) Xe Graphics", DeviceOption.ResolveGpu(" intel(r) iris(r) xe graphics ", laptop)?.Id);
+            True(DeviceOption.ResolveGpu("", laptop) is null);
+            True(DeviceOption.ResolveGpu("2", laptop) is null);
+            True(DeviceOption.ResolveGpu("-1", laptop) is null);
+            True(DeviceOption.ResolveGpu("AMD Radeon RX 9060 XT", laptop) is null);
+        });
         Test("gpu selector survives transient null selection without clearing setting", () =>
         {
             string saved = "0";

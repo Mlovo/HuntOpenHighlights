@@ -557,6 +557,13 @@ public partial class GalleryView : UserControl
         e.Handled = true;
     }
 
+    // The clip ListBox's own ScrollViewer swallows the wheel even with scrolling disabled; hand it to the page.
+    private void ClipListMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        e.Handled = true;
+        PageScroll.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = MouseWheelEvent, Source = sender });
+    }
+
     private void OnClipListSizeChanged(object sender, SizeChangedEventArgs e)
     {
         double availableWidth = e.NewSize.Width;

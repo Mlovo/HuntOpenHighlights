@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using HuntReplay.Core.Support;
 using HuntReplay.Core.Updates;
 
 namespace HuntReplay.Tests;
@@ -96,5 +97,18 @@ public static partial class Program
             Throws<IOException>(() => AppUpdate.Replace(exe, Path.Combine(path, "missing.exe")));
             Equal("old", File.ReadAllText(exe)); False(File.Exists(AppUpdate.BackupPath(exe)));
         }));
+        Test("support channels hide empty entries and non-https links", () =>
+        {
+            var shown = SupportChannels.Filter([
+                new("Page", "https://example.com/donate", SupportKind.Link),
+                new("Empty", "", SupportKind.Link),
+                new("Plain http", "http://example.com", SupportKind.Link),
+                new("Script", "javascript:alert(1)", SupportKind.Link),
+                new("Wallet", "TXYZ", SupportKind.Address),
+                new("No wallet", " ", SupportKind.Address),
+            ]);
+            Equal("Page,Wallet", string.Join(",", shown.Select(c => c.Name)));
+            True(SupportChannels.Available.All(c => !c.IsLink || SupportChannels.IsSafeLink(c.Value)));
+        });
     }
 }

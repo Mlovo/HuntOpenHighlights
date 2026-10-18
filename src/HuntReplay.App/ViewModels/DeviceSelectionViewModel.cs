@@ -48,7 +48,7 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
 
     public string? SelectedId
     {
-        get => refreshing ? null : readId();
+        get => refreshing ? null : Effective(readId());
         set
         {
             if (value is null || refreshing || value == readId()) return;
@@ -57,10 +57,15 @@ internal sealed class DeviceSelectionViewModel : ObservableObject
         }
     }
 
+    // A GPU saved by an older build (DXGI index) or by name shows as the adapter it resolves to. The stored value
+    // changes only when the user picks an option, so opening Settings never creates an unsaved change.
+    private string Effective(string saved) =>
+        kind == 3 && saved.Length > 0 && DeviceOption.ResolveGpu(saved, cachedDevices) is { } gpu ? gpu.Id : saved;
+
     public void Refresh(IEnumerable<DeviceOption>? devices = null)
     {
         if (devices is not null) cachedDevices = devices;
-        string selected = readId();
+        string selected = Effective(readId());
         var replacement = new List<DeviceOption> { new(kind, "", defaultLabelProvider()) };
         replacement.AddRange(cachedDevices.Where(d => d.Kind == kind && !string.IsNullOrEmpty(d.Id)));
         if (selected.Length > 0 && replacement.All(d => d.Id != selected))

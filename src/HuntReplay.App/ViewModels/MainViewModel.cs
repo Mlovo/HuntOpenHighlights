@@ -14,6 +14,7 @@ using HuntReplay.Core.Configuration;
 using HuntReplay.Core.Localization;
 using HuntReplay.Core.Media;
 using HuntReplay.Core.Storage;
+using HuntReplay.Core.Support;
 using HuntReplay.Core.Updates;
 using Microsoft.Win32;
 
@@ -168,9 +169,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string MemoryText => $"{status.Buffer.Bytes / 1024d / 1024:F1} {Loc["Dash.RamSuffix"]}";
     public string GpuStatus => status.Running ? status.Encoder :
         string.Format(Loc["Dash.GpuWaiting"],
-            (!string.IsNullOrEmpty(recorder.Settings.Video.GpuDevice)
-                ? Devices.FirstOrDefault(d => d.Kind == 3 && (d.Id == recorder.Settings.Video.GpuDevice || string.Equals(d.Name, recorder.Settings.Video.GpuDevice, StringComparison.OrdinalIgnoreCase)))?.Name
-                : null)
+            DeviceOption.ResolveGpu(recorder.Settings.Video.GpuDevice, Devices)?.Name
             ?? Devices.FirstOrDefault(d => d.Kind == 3)?.Name
             ?? Loc["Dash.GpuUnknown"]);
     public string EncodingModeLabel => recorder.Settings.Video.Encoder == VideoEncoder.X264 ? Loc["Dash.CpuExplicit"] : Loc["Dash.GpuEncoding"];
@@ -217,6 +216,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IRelayCommand ToggleLanguageCommand { get; }
     public IRelayCommand ToggleThemeCommand { get; }
     public IRelayCommand PreviewOverlayCommand { get; }
+    public IRelayCommand SupportCommand { get; }
+    public IReadOnlyList<SupportChannel> SupportOptions => SupportChannels.Available;
     public event Action? ClosePlayer;
 
     private readonly Choice<CaptureSource>[] sources = [
@@ -341,6 +342,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         CheckUpdateCommand = Async(CheckUpdateManualAsync);
         InstallUpdateCommand = new RelayCommand(() => { if (updateDownload is { } download) download.Cancel(); else _ = InstallUpdateAsync(); });
         ToggleLanguageCommand = new RelayCommand(() => Safe(ToggleLanguage));
+        SupportCommand = new RelayCommand<object?>(value => Safe(() => UseSupportChannel(value)));
         ThemeSvc.SetTheme(recorder.Settings.System.Theme);
         ToggleThemeCommand = new RelayCommand(() => Safe(ToggleTheme));
         // Uses the unsaved position and duration, so they can be tried before saving.
@@ -716,6 +718,13 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 status.Running ? Loc.Format("Overlay.BufferStartedDetail", HotkeyLabel) : "");
         // Only SaveCommand depends on live capture state.
         if (IsBufferActive != wasActive) SaveCommand.NotifyCanExecuteChanged();
+    }
+    private void UseSupportChannel(object? value)
+    {
+        if (value is not SupportChannel channel) return;
+        if (channel.IsLink) { DesktopIntegration.OpenUrl(channel.Value); return; }
+        Clipboard.SetText(channel.Value);
+        Message = Loc.Format("Support.Copied", channel.Name);
     }
     public void Error(Exception ex) { Message = ex.Message; log.Write(ex.Message, "ERROR"); }
     // A preview failure is not an export failure: the saved MP4 stays as written, so this is a warning, not an error.

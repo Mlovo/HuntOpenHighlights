@@ -157,7 +157,8 @@ internal sealed class NativeCaptureEngine : IDisposable
             OutputDevice = settings.Audio.OutputDeviceId, MicrophoneDevice = settings.Audio.MicrophoneDeviceId,
             MicrophoneEnabled = settings.Audio.MicrophoneEnabled ? 1 : 0, MicrophoneGain = settings.Audio.MicrophoneVolume / 100f,
             SeparateMicrophone = settings.Audio.Mode == AudioMode.SeparateTracks ? 1 : 0,
-            GpuDevice = settings.Video.GpuDevice
+            // Send the adapter the Settings page shows, also for a value saved by an older build.
+            GpuDevice = DeviceOption.ResolveGpu(settings.Video.GpuDevice, devices)?.Id ?? settings.Video.GpuDevice
         };
     }
 

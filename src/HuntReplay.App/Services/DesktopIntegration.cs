@@ -7,6 +7,7 @@ using System.Windows.Interop;
 using HuntReplay.Core.Configuration;
 using HuntReplay.Core.Localization;
 using HuntReplay.Core.Storage;
+using HuntReplay.Core.Support;
 using Microsoft.Win32;
 
 namespace HuntReplay.App.Services;
@@ -66,6 +67,11 @@ internal static class DesktopIntegration
     {
         Directory.CreateDirectory(folder);
         Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { Path.GetFullPath(folder) }, UseShellExecute = true });
+    }
+    public static void OpenUrl(string url)
+    {
+        if (!SupportChannels.IsSafeLink(url)) throw new ArgumentException(Text.Get("Support.BadLink"), nameof(url));
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
     public static void RevealFile(string file)
     {
