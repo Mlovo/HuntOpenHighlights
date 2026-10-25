@@ -349,11 +349,12 @@ public sealed class ClipLibrary(string directory, string storeRoot)
 
     private void RemoveStaleTemporaryFiles()
     {
-        foreach (var directory in new[] { recordsDirectory, thumbnailsDirectory })
+        // *.partial.mp4 in the clips folder is an export or trim that a crash or power loss interrupted.
+        foreach (var (directory, pattern) in new[] { (recordsDirectory, "*.tmp"), (thumbnailsDirectory, "*.tmp"), (Root, "*.partial.mp4") })
         {
-            foreach (var temp in FilesMatching(directory, "*.tmp"))
+            foreach (var temp in FilesMatching(directory, pattern))
             {
-                try { if (DateTime.UtcNow - File.GetLastWriteTimeUtc(temp) > StaleTemporaryAge) File.Delete(temp); }
+                try { if (!IsLink(temp) && DateTime.UtcNow - File.GetLastWriteTimeUtc(temp) > StaleTemporaryAge) File.Delete(temp); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
         }

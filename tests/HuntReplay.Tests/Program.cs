@@ -195,6 +195,16 @@ public static partial class Program
             l.Maintain();
             False(File.Exists(stale)); True(File.Exists(fresh));
         }));
+        Test("interrupted exports are removed from the clips folder once stale", () => InLibrary((path, store) =>
+        {
+            var l = new ClipLibrary(path, store);
+            var stale = Path.Combine(path, "Hunt_A.mp4.partial.mp4"); File.WriteAllText(stale, "x"); File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddHours(-2));
+            var trim = Path.Combine(path, "Hunt_B_trimmed.mp4.1a2b3c4d.partial.mp4"); File.WriteAllText(trim, "x"); File.SetLastWriteTimeUtc(trim, DateTime.UtcNow.AddHours(-2));
+            var running = Path.Combine(path, "Hunt_C.mp4.partial.mp4"); File.WriteAllText(running, "x");
+            var clip = Path.Combine(path, "Hunt_D.mp4"); File.WriteAllText(clip, "x"); File.SetLastWriteTimeUtc(clip, DateTime.UtcNow.AddHours(-2));
+            l.Maintain();
+            False(File.Exists(stale)); False(File.Exists(trim)); True(File.Exists(running)); True(File.Exists(clip));
+        }));
         Test("0.1.2 copy with a duplicate Id cannot delete the original's record or thumbnail", () => InLibrary((path, store) =>
         {
             var first = Path.Combine(path, "First"); var second = Path.Combine(path, "Second");
