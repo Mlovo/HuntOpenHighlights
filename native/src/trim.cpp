@@ -323,7 +323,7 @@ void trim(const wchar_t* source_path, const wchar_t* target_path,
     auto report_progress = [&](int64_t rel_pts_us) {
         if (!progress_cb || ++packet_counter % 10 != 0) return;
         double prog = std::clamp(static_cast<double>(rel_pts_us) / 1'000'000.0 / trim_duration, 0.0, 0.99);
-        if (progress_cb(user, prog) != 0) throw std::runtime_error("Операция обрезки отменена пользователем.");
+        if (progress_cb(user, prog) != 0) throw std::runtime_error("Trim cancelled by the user.");
     };
 
     // Moves every packet the encoder has ready into the output. av_packet_rescale_ts converts duration too.

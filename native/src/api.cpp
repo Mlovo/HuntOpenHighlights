@@ -18,6 +18,8 @@ void player_set_volume(hr_player*, float);
 void trim(const wchar_t*, const wchar_t*, double, double, bool, hr_trim_progress_callback, void*);
 thread_local std::wstring last_error;
 template<typename F> int guard(F operation) noexcept {
+    // Only FFmpeg warnings logged during this call may annotate its error, not one left over from an earlier call.
+    ffmpeg_detail.clear();
     try { operation(); last_error.clear(); return 0; }
     catch (const winrt::hresult_error& e) { last_error = std::wstring(e.message()); }
     catch (const std::exception& e) { last_error = wide(e.what()); }
