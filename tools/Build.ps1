@@ -53,6 +53,7 @@ Invoke-Checked 'dotnet' @('build','src/HuntReplay.App','--configuration',$Config
 if (!$SkipTests) {
     Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.Tests','--configuration',$Configuration)
     Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.WindowsTests','--configuration',$Configuration)
+    Invoke-Checked 'dotnet' @('run','--project','tests/HuntReplay.E2ETests','--configuration',$Configuration)
 }
 if ($NoPublish) {
     Write-Host 'Build complete (no portable executable requested).'
