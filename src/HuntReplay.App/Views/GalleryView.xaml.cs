@@ -917,8 +917,9 @@ public partial class GalleryView : UserControl
 
         isExporting = true;
         exportCts?.Dispose();
-        exportCts = new CancellationTokenSource();
-        var token = exportCts.Token;
+        // Close() cancels and forgets this export; once another export owns exportCts, this one must not touch the UI.
+        var cts = exportCts = new CancellationTokenSource();
+        var token = cts.Token;
 
         SetTrimControlsEnabled(false);
         TrimProgressPanel.Visibility = Visibility.Visible;
@@ -930,7 +931,7 @@ public partial class GalleryView : UserControl
 
         var progress = new Progress<double>(p =>
         {
-            if (!isExporting) return;
+            if (exportCts != cts) return;
             int percentage = (int)Math.Clamp(Math.Round(p * 100.0), 0, 100);
             TrimProgressBar.Value = percentage;
             TrimProgressPercent.Text = $"{percentage}%";
@@ -947,7 +948,9 @@ public partial class GalleryView : UserControl
                 throw new IOException(Loc["Gallery.FragmentMissing"]);
             }
 
-            await HandleExportSuccess(exportedFile, start, end);
+            // After Close the player may show another clip: registering and leaving trim mode would act on that one.
+            if (exportCts == cts) await HandleExportSuccess(exportedFile, start, end);
+            else UpdateStatusMessage(Loc.Format("Gallery.FragmentSaved", Path.GetFileName(exportedFile)));
         }
         catch (OperationCanceledException)
         {
@@ -960,11 +963,15 @@ public partial class GalleryView : UserControl
         }
         finally
         {
-            isExporting = false;
-            TrimProgressPanel.Visibility = Visibility.Collapsed;
-            SetTrimControlsEnabled(true);
-            exportCts?.Dispose();
-            exportCts = null;
+            cts.Dispose();
+            // Null: Close or Escape already cancelled this export and no newer one runs, so the UI is still ours.
+            if (exportCts == cts || exportCts is null)
+            {
+                isExporting = false;
+                TrimProgressPanel.Visibility = Visibility.Collapsed;
+                SetTrimControlsEnabled(true);
+                exportCts = null;
+            }
         }
     }
 
