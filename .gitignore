@@ -24,7 +24,11 @@ __pycache__/
 *.py[cod]
 .venv/
 
+# graphify knowledge graph (rebuilt locally by git hooks)
+graphify-out/
+
 # Local agent workspaces and instructions
 .agents/
 .agent/
 CLAUDE.md
+.claude/

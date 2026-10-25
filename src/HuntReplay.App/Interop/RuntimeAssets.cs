@@ -62,6 +62,19 @@ internal static class RuntimeAssets
             if (NativeMethods.hr_abi_version() != 1) throw new InvalidOperationException(Text.Get("Runtime.AbiMismatch"));
             RuntimeDirectory = root;
             loaded = true;
+            DeleteStaleRuntimes(root);
+        }
+    }
+
+    // Every build with a new manifest extracts ~190 MB into a fresh folder; drop the old ones.
+    private static void DeleteStaleRuntimes(string current)
+    {
+        foreach (var dir in new DirectoryInfo(Path.GetDirectoryName(current)!).EnumerateDirectories())
+        {
+            if (string.Equals(dir.FullName, current, StringComparison.OrdinalIgnoreCase) ||
+                (dir.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+            try { dir.Delete(true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } // still loaded by another running instance
         }
     }
 
