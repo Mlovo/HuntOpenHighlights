@@ -3,7 +3,7 @@
 ## 1. Overview & Architecture
 This document defines the comprehensive opaque-box, requirement-driven End-to-End (E2E) testing infrastructure for the **HuntReplayStudio Interactive Video Trimming** system.
 
-The E2E test suite validates features specified in `ORIGINAL_REQUEST.md` across both managed WPF/MVVM layers (`GalleryView`, `RangeSlider`, `VideoTrimmingService`) and the native multimedia engine (`HuntReplay.Media.dll` wrapping FFmpeg 8.1.3).
+The E2E test suite validates the trimming feature across both managed WPF/MVVM layers (`GalleryView`, `RangeSlider`, `VideoTrimmingService`) and the native multimedia engine (`HuntReplay.Media.dll` wrapping FFmpeg 8.1.3). Test IDs cite three requirement groups: **§R1** the trim UI in the gallery player, **§R2** the trimming engine and service, **§R3** clips without audio and the unchanged normal player. `tools/Build.ps1` runs the suite after the Windows tests.
 
 ### Key Architectural Principles
 - **Opaque-Box & Requirement-Driven**: Tests interact exclusively through public APIs, user interface state contracts, and exported C ABI functions, verifying external observable behaviors without relying on white-box internals.
@@ -29,7 +29,7 @@ tests/HuntReplay.E2ETests/
 ```
 
 ### Tier 1: Feature Coverage (Isolated Happy Path) — 15 Tests
-Verifies happy-path execution of each isolated requirement from `ORIGINAL_REQUEST.md`:
+Verifies happy-path execution of each isolated requirement:
 - **T1-01 (§R1)**: "Trim Video" button presence and smooth inline mode entry in `GalleryView` (Seek slider swapped for `RangeSlider` and `TrimToolbar`, player paused).
 - **T1-02 (§R1)**: Dual-handle timeline initialization to clip duration, visual distinction (accent selected range, dimmed unselected regions).
 - **T1-03 (§R1)**: Real-time timestamp formatting in MM:SS (sub-hour) and HH:MM:SS (hour-plus) updating dynamically.

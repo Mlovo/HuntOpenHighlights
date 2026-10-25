@@ -72,4 +72,4 @@ $Exe = Join-Path $Publish 'HuntReplayStudio.exe'
 (Get-FileHash $Exe -Algorithm SHA256).Hash.ToLowerInvariant() + '  HuntReplayStudio.exe' | Set-Content (Join-Path $Publish 'SHA256SUMS.txt') -Encoding Ascii
 Write-Host "`nPortable self-contained executable: $Exe" -ForegroundColor Green
 Write-Host 'No OBS, Python, FFmpeg executable, VC++ redistributable or .NET installation is needed on the target PC.'
-Write-Host 'This build is unsigned unless YOU sign it. Complete docs/WINDOWS_VALIDATION.md and third-party redistribution checks before release.'
+Write-Host 'This build is unsigned unless YOU sign it. Test it on real hardware and complete the third-party redistribution checks before release.'
