@@ -143,6 +143,30 @@ public sealed class ClipLibrary(string directory, string storeRoot)
     }
 
     /// <summary>
+    /// Deletes each clip on its own and returns the ones that failed: a clip whose MP4 is locked stays listed,
+    /// the rest are still deleted. One listing proves ownership for all of them.
+    /// </summary>
+    public IReadOnlyList<(LibraryClip Clip, Exception Error)> DeleteEach(IEnumerable<LibraryClip> clips)
+    {
+        var failed = new List<(LibraryClip, Exception)>();
+        lock (Gate)
+        {
+            var listed = List().ToDictionary(c => c.FullPath, StringComparer.OrdinalIgnoreCase);
+            foreach (var clip in clips)
+            {
+                try
+                {
+                    if (!listed.TryGetValue(clip.FullPath, out var actual) || actual.Metadata.Id != clip.Metadata.Id)
+                        throw new IOException(Text.Get("Library.NotOwned"));
+                    DeleteListed(actual);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed.Add((clip, ex)); }
+            }
+        }
+        return failed;
+    }
+
+    /// <summary>
     /// Deletes a clip whose ownership is already proven: the caller holds <see cref="Gate"/> and took the clip
     /// from <see cref="List"/> in the same critical section, so the full record re-scan of EnsureOwned is skipped.
     /// </summary>

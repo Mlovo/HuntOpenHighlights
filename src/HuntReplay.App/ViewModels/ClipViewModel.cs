@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+using CommunityToolkit.Mvvm.ComponentModel;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using HuntReplay.App.Services;
@@ -5,8 +7,11 @@ using HuntReplay.Core.Storage;
 
 namespace HuntReplay.App.ViewModels;
 
-internal sealed class ClipViewModel
+internal sealed class ClipViewModel : ObservableObject
 {
+    private bool isPreviewing;
+    // Set by MainViewModel.PreviewClip so the card can mark the clip shown in the player.
+    public bool IsPreviewing { get => isPreviewing; set => SetProperty(ref isPreviewing, value); }
     public LibraryClip Clip { get; }
     public string FileName => Clip.Metadata.FileName;
     public string EventLabel
@@ -32,6 +37,11 @@ internal sealed class ClipViewModel
     public string Size => LocalizationService.Instance.Format("Unit.MegabytesValue", Clip.Metadata.Bytes / 1024d / 1024);
     public string Date => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM · HH:mm", HuntReplay.Core.Localization.Text.Culture);
     public string Detail => $"{Date}   /   {Size}";
+    // Generated names carry the {time} stamp (HH-mm-ss-fff) and read better as their date; a renamed clip keeps its own name.
+    private static readonly Regex GeneratedName = new(@"\d{2}-\d{2}-\d{2}-\d{3}", RegexOptions.Compiled);
+    private bool HasGeneratedName => GeneratedName.IsMatch(FileName);
+    public string Title => HasGeneratedName ? Date : Path.GetFileNameWithoutExtension(FileName);
+    public string Subtitle => HasGeneratedName ? Size : $"{Date} · {Size}";
     public ImageSource? Thumbnail { get; }
     // A thumbnail file is written once per clip Id, so one decoded by an earlier library refresh is reused as is.
     public ClipViewModel(LibraryClip clip, ImageSource? decoded = null)

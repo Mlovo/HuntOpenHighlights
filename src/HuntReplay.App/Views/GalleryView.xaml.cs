@@ -30,8 +30,7 @@ public partial class GalleryView : UserControl
     private WriteableBitmap? bitmap;
     private bool playing, dragging, updating;
     private double naturalDuration;
-    private string? currentPath;
-    private int videoWidth, videoHeight;
+    private string? currentPath;    private int videoWidth, videoHeight;
     private double currentVolume = 1.0;
     private double lastNonZeroVolume = 1.0;
 
@@ -108,8 +107,8 @@ public partial class GalleryView : UserControl
 
     private void ContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (e.OldValue is MainViewModel old) old.ClosePlayer -= Close;
-        if (e.NewValue is MainViewModel model) model.ClosePlayer += Close;
+        if (e.OldValue is MainViewModel old) { old.ClosePlayer -= Close; old.TrimRequested -= TrimClip; old.PropertyChanged -= ModelPropertyChanged; }
+        if (e.NewValue is MainViewModel model) { model.ClosePlayer += Close; model.TrimRequested += TrimClip; model.PropertyChanged += ModelPropertyChanged; }
     }
 
     public void Close()
@@ -178,23 +177,89 @@ public partial class GalleryView : UserControl
 
     private void OnClipItemClicked(object sender, MouseButtonEventArgs e)
     {
-        if (sender is ListBoxItem item && item.DataContext is ClipViewModel clip)
+        if (sender is not ListBoxItem item || item.DataContext is not ClipViewModel clip) return;
+        // WPF's Shift-click replaces the selection with anchor..clip; here it fills every gap between the
+        // outermost selected clips and the clicked one, so 1 and 4 selected plus Shift-click on 6 gives 1-6.
+        if (Keyboard.Modifiers == ModifierKeys.Shift && ClipList.SelectedItems.Count > 0)
         {
-            if (playerHandle == IntPtr.Zero || currentPath != clip.Clip.FullPath)
-            {
-                Close();
-                currentPath = clip.Clip.FullPath;
-                LoadVideo(currentPath);
-            }
+            var indices = ClipList.SelectedItems.Cast<object>().Select(ClipList.Items.IndexOf).Append(ClipList.Items.IndexOf(clip)).ToArray();
+            for (var i = indices.Min(); i <= indices.Max(); i++)
+                if (!ClipList.SelectedItems.Contains(ClipList.Items[i])) ClipList.SelectedItems.Add(ClipList.Items[i]);
+            item.Focus();
+            e.Handled = true;
+            return;
         }
+        // Ctrl/Shift clicks build a selection for bulk actions; SelectionChanged decides what the player shows.
+        if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0) return;
+        // The tile checkbox does the same as a Ctrl-click; the card buttons handle their own clicks.
+        for (var d = e.OriginalSource as DependencyObject; d is Visual && d != item; d = VisualTreeHelper.GetParent(d))
+            if (d is ButtonBase) return;
+        if (DataContext is not MainViewModel model) return;
+        model.PreviewClip = clip;
+        ShowPreview(); // Also reopens a clip whose player was closed, when PreviewClip did not change.
+        // In selection mode a click only previews; the circle, Ctrl and Shift change the selection.
+        if (ClipList.SelectedItems.Count > 1) { item.Focus(); e.Handled = true; }
+    }
+
+    private void ModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.PreviewClip)) ShowPreview();
+    }
+
+    // Opens MainViewModel.PreviewClip in the player unless it is already there.
+    private void ShowPreview()
+    {
+        var clip = (DataContext as MainViewModel)?.PreviewClip;
+        if (clip is not null && playerHandle != IntPtr.Zero && currentPath == clip.Clip.FullPath) return;
+        Close();
+        if (!IsVisible || clip is null) return;
+        currentPath = clip.Clip.FullPath;
+        LoadVideo(currentPath);
+    }
+
+    private void ClearSelectionClick(object sender, RoutedEventArgs e) => ClipList.UnselectAll();
+
+    private void CardMoreClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.DataContext is not ClipViewModel clip) return;
+        // Like a right-click: a tile already in the selection keeps it, so the menu acts on all of it.
+        if (!ClipList.SelectedItems.Contains(clip)) ClipList.SelectedItem = clip;
+        var menu = ClipList.ContextMenu;
+        menu.DataContext = DataContext; // Opened from the card, it would otherwise inherit the clip as its DataContext.
+        // Placement stays at the mouse point, the default a later right-click relies on.
+        menu.PlacementTarget = button;
+        menu.IsOpen = true;
+    }
+
+    private void TrimClip(ClipViewModel clip)
+    {
+        if (DataContext is MainViewModel model) model.PreviewClip = clip;
+        ShowPreview();
+        EnterTrimMode();
+        PlayerImage.BringIntoView();
+    }
+
+    // Esc clears the selection; Enter previews the focused card, or plays and pauses it once it is in the player.
+    // Delete, F2 and Shift+F10 come from the list's bindings and menu.
+    private void ClipListKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && ClipList.SelectedItems.Count > 0) { ClipList.UnselectAll(); e.Handled = true; return; }
+        if (e.Key != Key.Enter || DataContext is not MainViewModel model) return;
+        if ((Keyboard.FocusedElement as ListBoxItem)?.DataContext is ClipViewModel focused && focused != model.PreviewClip)
+        {
+            model.PreviewClip = focused;
+            ShowPreview();
+        }
+        else PlayPause(ClipList, e);
+        e.Handled = true;
     }
 
     private void SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        Close();
-        if (!IsVisible || ClipList.SelectedItem is not ClipViewModel clip) return;
-        currentPath = clip.Clip.FullPath;
-        LoadVideo(currentPath);
+        if (DataContext is not MainViewModel model) return;
+        model.SelectedClips = ClipList.SelectedItems.Cast<ClipViewModel>().ToArray();
+        // A single selection is what the player shows; growing or clearing a selection leaves the preview alone.
+        if (ClipList.SelectedItems.Count == 1 && ClipList.SelectedItem is ClipViewModel clip) model.PreviewClip = clip;
     }
 
     private void LoadVideo(string path)
@@ -495,11 +560,7 @@ public partial class GalleryView : UserControl
         }
         else if (e.NewValue is true)
         {
-            if (playerHandle == IntPtr.Zero && ClipList?.SelectedItem is ClipViewModel clip)
-            {
-                currentPath = clip.Clip.FullPath;
-                LoadVideo(currentPath);
-            }
+            if (playerHandle == IntPtr.Zero) ShowPreview();
         }
     }
 

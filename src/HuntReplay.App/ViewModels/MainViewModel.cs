@@ -145,7 +145,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         get => customDiagnostics ?? Loc["Footer.DiagnosticsDefault"];
         private set { if (SetProperty(ref customDiagnostics, value)) OnPropertyChanged(); }
     }
-    public string SelectedEventLabel => SelectedClip?.EventLabel ?? Loc["Gallery.NoClipSelected"];
+    public string SelectedEventLabel => PreviewClip?.EventLabel ?? Loc["Gallery.NoClipSelected"];
     public bool Busy { get => busy; private set { if (SetProperty(ref busy, value)) NotifyCommands(ToggleBufferCommand, SaveCommand, ApplySettingsCommand, DiagnoseCommand, InstallCommand, UninstallCommand); } }
     public StudioSettings SettingsEdit
     {
@@ -156,8 +156,35 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ClipViewModel? SelectedClip
     {
         get => selectedClip;
-        set { if (SetProperty(ref selectedClip, value)) { recorder.ProtectPlayingClip(value?.Clip.Metadata.Id); OnPropertyChanged(nameof(SelectedEventLabel)); NotifyCommands(DeleteCommand, RenameCommand, RevealCommand, OpenInPlayerCommand); } }
+        set { if (SetProperty(ref selectedClip, value)) NotifyCommands(DeleteCommand, RenameCommand, TrimCommand, RevealCommand, OpenInPlayerCommand); }
     }
+    // The gallery list keeps this in step with its SelectedItems, which WPF cannot bind; SelectedClip is the first of them.
+    private IReadOnlyList<ClipViewModel> selectedClips = [];
+    public IReadOnlyList<ClipViewModel> SelectedClips
+    {
+        get => selectedClips;
+        set { selectedClips = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsSelectionMode)); NotifyCommands(DeleteCommand, RenameCommand, TrimCommand, RevealCommand, OpenInPlayerCommand); }
+    }
+    private bool OneClipSelected => SelectedClip is not null && SelectedClips.Count <= 1;
+    // With several clips selected, a click on a card previews it without changing the selection.
+    public bool IsSelectionMode => SelectedClips.Count > 1;
+    // The clip in the gallery player: it follows a single selection, or a click in selection mode. The player bar acts on it.
+    private ClipViewModel? previewClip;
+    public ClipViewModel? PreviewClip
+    {
+        get => previewClip;
+        set
+        {
+            var old = previewClip;
+            if (!SetProperty(ref previewClip, value)) return;
+            if (old is not null) old.IsPreviewing = false;
+            if (value is not null) value.IsPreviewing = true;
+            recorder.ProtectPlayingClip(value?.Clip.Metadata.Id);
+            OnPropertyChanged(nameof(SelectedEventLabel));
+        }
+    }
+    // The player bar passes the clip it shows; the card menu and shortcuts pass nothing and act on the selection.
+    private ClipViewModel? Target(object? clip) => clip as ClipViewModel ?? (OneClipSelected ? SelectedClip : null);
     public bool IsBufferActive => status.Running && status.Buffer.Seconds > 0;
     public bool IsGameConnected => pipe.Games.Count > 0;
     public string GameStatus => IsGameConnected ? string.Format(Loc["Dash.GameConnected"], string.Join(", ", pipe.Games.Select(g => g.Game).Distinct())) :
@@ -203,6 +230,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IRelayCommand RefreshCommand { get; }
     public IRelayCommand DeleteCommand { get; }
     public IRelayCommand RenameCommand { get; }
+    public IRelayCommand TrimCommand { get; }
     public IRelayCommand RevealCommand { get; }
     public IRelayCommand OpenInPlayerCommand { get; }
     public IRelayCommand DiagnoseCommand { get; }
@@ -219,6 +247,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IRelayCommand SupportCommand { get; }
     public IReadOnlyList<SupportChannel> SupportOptions => SupportChannels.Available;
     public event Action? ClosePlayer;
+    // Trimming lives in the gallery player, so the command only asks the view to start it.
+    public event Action<ClipViewModel>? TrimRequested;
 
     private readonly Choice<CaptureSource>[] sources = [
         new(CaptureSource.HuntWindow, ""),
@@ -329,10 +359,12 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         BrowseCommand = new RelayCommand(() => Safe(Browse));
         OpenFolderCommand = new RelayCommand(() => Safe(() => DesktopIntegration.OpenFolder(recorder.Settings.Storage.Directory)));
         RefreshCommand = Async(RefreshClipsAsync);
-        DeleteCommand = new RelayCommand(() => Safe(DeleteClip), () => SelectedClip is not null);
-        RenameCommand = new RelayCommand(() => Safe(RenameClip), () => SelectedClip is not null);
-        RevealCommand = new RelayCommand(() => Safe(() => DesktopIntegration.RevealFile(SelectedClip!.Clip.FullPath)), () => SelectedClip is not null);
-        OpenInPlayerCommand = new RelayCommand(() => Safe(() => DesktopIntegration.OpenWithDefaultPlayer(SelectedClip!.Clip.FullPath)), () => SelectedClip is not null);
+        DeleteCommand = new RelayCommand<object?>(clip => Safe(() => DeleteClips(clip is ClipViewModel one ? [one] : SelectedClips.Count > 0 ? SelectedClips : SelectedClip is { } single ? [single] : [])),
+            clip => clip is ClipViewModel || SelectedClip is not null);
+        RenameCommand = new RelayCommand<object?>(clip => Safe(() => RenameClip(Target(clip)!)), clip => Target(clip) is not null);
+        TrimCommand = new RelayCommand<object?>(clip => TrimRequested?.Invoke(Target(clip)!), clip => Target(clip) is not null);
+        RevealCommand = new RelayCommand<object?>(clip => Safe(() => DesktopIntegration.RevealFile(Target(clip)!.Clip.FullPath)), clip => Target(clip) is not null);
+        OpenInPlayerCommand = new RelayCommand<object?>(clip => Safe(() => DesktopIntegration.OpenWithDefaultPlayer(Target(clip)!.Clip.FullPath)), clip => Target(clip) is not null);
         DiagnoseCommand = Async(DiagnoseAsync, () => !Busy);
         SaveReportCommand = new RelayCommand(() => Safe(SaveReport));
         InstallCommand = Async(InstallAsync, () => !Busy);
@@ -601,6 +633,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var directory = recorder.Settings.Storage.Directory;
         var selectedId = SelectedClip?.Clip.Metadata.Id;
+        var previewId = PreviewClip?.Clip.Metadata.Id;
         // Runs after every saved clip, during a match: decode only thumbnails that are new since the last refresh.
         var decoded = new Dictionary<string, System.Windows.Media.ImageSource>(StringComparer.OrdinalIgnoreCase);
         foreach (var clip in Clips) if (clip.Thumbnail is { } image) decoded.TryAdd(clip.Clip.ThumbnailPath, image);
@@ -620,6 +653,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         });
         Clips.Clear(); foreach (var clip in result) Clips.Add(clip);
         SelectedClip = Clips.FirstOrDefault(c => c.Clip.Metadata.Id == selectedId);
+        PreviewClip = Clips.FirstOrDefault(c => c.Clip.Metadata.Id == previewId);
         OnPropertyChanged(nameof(RecentClips)); OnPropertyChanged(nameof(HasClips)); OnPropertyChanged(nameof(ClipCount)); OnPropertyChanged(nameof(LibrarySummary));
     }
     private void Browse()
@@ -627,25 +661,28 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         var dialog = new OpenFolderDialog { Title = Loc["Dialog.ClipsFolder"], InitialDirectory = SettingsEdit.Storage.Directory };
         if (dialog.ShowDialog() == true) { SettingsEdit.Storage.Directory = dialog.FolderName; SettingsEdit = SettingsEdit.Clone(); }
     }
-    private void DeleteClip()
+    private void DeleteClips(IReadOnlyList<ClipViewModel> clips)
     {
-        if (SelectedClip is not { } clip || MessageBox.Show(
-            Loc.Format("Dialog.DeleteClipQuestion", clip.FileName),
+        if (clips.Count == 0 || MessageBox.Show(
+            clips.Count == 1 ? Loc.Format("Dialog.DeleteClipQuestion", clips[0].FileName) : Loc.Format("Dialog.DeleteClipsQuestion", clips.Count),
             Loc["Dialog.DeleteClipTitle"], MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         ClosePlayer?.Invoke();
-        Library().Delete(clip.Clip);
-        Clips.Remove(clip); SelectedClip = null;
+        var failed = Library().DeleteEach(clips.Select(c => c.Clip)).ToDictionary(f => f.Clip.FullPath, f => f.Error, StringComparer.OrdinalIgnoreCase);
+        foreach (var clip in clips) if (!failed.ContainsKey(clip.Clip.FullPath)) Clips.Remove(clip);
+        SelectedClip = null;
+        if (PreviewClip is { } shown && !Clips.Contains(shown)) PreviewClip = null;
+        foreach (var error in failed.Values) Error(error);
+        if (failed.Count > 1) Message = Loc.Format("Status.ClipsNotDeleted", failed.Count, clips.Count);
         OnPropertyChanged(nameof(RecentClips)); OnPropertyChanged(nameof(HasClips)); OnPropertyChanged(nameof(ClipCount)); OnPropertyChanged(nameof(LibrarySummary));
     }
-    private void RenameClip()
+    private void RenameClip(ClipViewModel clip)
     {
-        if (SelectedClip is not { } clip) return;
         var dialog = new InputDialog(Loc["Dialog.RenameClip"], clip.FileName) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true) return;
         ClosePlayer?.Invoke();
         var renamed = Library().Rename(clip.Clip, dialog.Value);
         var index = Clips.IndexOf(clip); var model = new ClipViewModel(renamed);
-        Clips[index] = model; SelectedClip = model; OnPropertyChanged(nameof(RecentClips));
+        Clips[index] = model; if (SelectedClip == clip) SelectedClip = model; if (PreviewClip == clip) PreviewClip = model; OnPropertyChanged(nameof(RecentClips));
     }
     private async Task DiagnoseAsync()
     {
