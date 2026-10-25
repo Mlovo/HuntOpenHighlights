@@ -9,13 +9,14 @@ using Microsoft.Win32.SafeHandles;
 
 namespace HuntReplay.App.Services;
 
-internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog log) : IAsyncDisposable
+internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog log, string pipeName = HighlightsPipeServer.PipeName) : IAsyncDisposable
 {
     public const string PipeName = "NvMessageBusBroadcast";
     private readonly CancellationTokenSource stop = new();
     private readonly ConcurrentDictionary<int, Task> clients = new();
     private readonly ConcurrentDictionary<int, (uint Pid, string Game)> games = new();
-    private Task? listener;
+    // Null whenever no listen loop runs, so TryStart can claim the pipe again after a failure.
+    private volatile Task? listener;
     private int nextClient;
     private volatile bool listening;
     public bool IsListening => listening;
@@ -23,14 +24,13 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
     public event Action? StateChanged;
     public IReadOnlyCollection<(uint Pid, string Game)> Games => games.Values.ToArray();
 
-    public void Start() => TryStart(logFailure: true);
-
     /// <summary>
     /// Claims the Highlights pipe. Returns false when another server holds it; with logFailure false the caller
     /// can react first (for example pause NVIDIA's container) and retry without an error in the log.
     /// </summary>
     public bool TryStart(bool logFailure)
     {
+        if (stop.IsCancellationRequested) return false;
         if (listener is not null) return true;
         try
         {
@@ -39,7 +39,7 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
             listening = true;
             Failure = null;
             listener = Task.Run(() => ListenAsync(first));
-            log.Write(Text.Format("Ipc.Listening", @"\\.\pipe\" + PipeName));
+            log.Write(Text.Format("Ipc.Listening", @"\\.\pipe\" + pipeName));
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -50,7 +50,7 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
         }
     }
 
-    private static NamedPipeServerStream NewPipe(bool first) => new(PipeName, PipeDirection.InOut, 16,
+    private NamedPipeServerStream NewPipe(bool first) => new(pipeName, PipeDirection.InOut, 16,
         PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly |
         (first ? PipeOptions.FirstPipeInstance : PipeOptions.None), 65536, 65536);
 
@@ -87,7 +87,8 @@ internal sealed class HighlightsPipeServer(RecorderService recorder, StudioLog l
             Failure = ex.Message;
             log.Write(Text.Format("Ipc.ServerStopped", ex.Message), "ERROR");
         }
-        finally { next.Dispose(); listening = false; StateChanged?.Invoke(); }
+        // listening drops first: a TryStart that sees the null listener then starts a fresh loop that stays marked.
+        finally { next.Dispose(); listening = false; listener = null; StateChanged?.Invoke(); }
     }
 
     private async Task RemoveWhenDoneAsync(Task task, int id)

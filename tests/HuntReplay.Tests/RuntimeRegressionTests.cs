@@ -10,6 +10,52 @@ public static partial class Program
 {
     private static void RuntimeRegressionTests()
     {
+        if (OperatingSystem.IsWindows()) TestAsync("Highlights pipe server restarts after its listen loop failed", async () =>
+        {
+            if (AppAssembly() is not { } app) return;
+            var root = Path.Combine(Path.GetTempPath(), "HuntReplay-pipe-test-" + Guid.NewGuid().ToString("N"));
+            var name = "HuntReplayTest." + Guid.NewGuid().ToString("N");
+            var log = (IAsyncDisposable)Activator.CreateInstance(app.GetType("HuntReplay.App.Services.StudioLog")!, root)!;
+            var recorder = (IAsyncDisposable)Activator.CreateInstance(app.GetType("HuntReplay.App.Services.RecorderService")!,
+                new StudioSettings(), log, Path.Combine(root, "library"))!;
+            var serverType = app.GetType("HuntReplay.App.Services.HighlightsPipeServer")!;
+            var server = (IAsyncDisposable)Activator.CreateInstance(serverType, recorder, log, name)!;
+            bool TryStart() => (bool)serverType.GetMethod("TryStart")!.Invoke(server, [false])!;
+            bool Listening() => (bool)serverType.GetProperty("IsListening")!.GetValue(server)!;
+            var blockers = new List<System.IO.Pipes.NamedPipeServerStream>();
+            try
+            {
+                True(TryStart());
+                // Take the other 15 of the 16 instances: after the next connection the server cannot create
+                // a listening instance, and its listen loop ends with an IOException.
+                for (int i = 0; i < 15; i++)
+                    blockers.Add(new(name, System.IO.Pipes.PipeDirection.InOut, 16, System.IO.Pipes.PipeTransmissionMode.Byte,
+                        System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly));
+                using (var first = new System.IO.Pipes.NamedPipeClientStream(".", name, System.IO.Pipes.PipeDirection.InOut))
+                {
+                    await first.ConnectAsync(5000);
+                    for (int wait = 0; wait < 100 && Listening(); wait++) await Task.Delay(50);
+                    False(Listening());
+                }
+                foreach (var blocker in blockers) blocker.Dispose();
+                blockers.Clear();
+                // The watcher's next retry must start a fresh loop, not report the dead one as running.
+                True(TryStart());
+                True(Listening());
+                using var client = new System.IO.Pipes.NamedPipeClientStream(".", name, System.IO.Pipes.PipeDirection.InOut);
+                await client.ConnectAsync(5000);
+                True(client.IsConnected);
+            }
+            finally
+            {
+                foreach (var blocker in blockers) blocker.Dispose();
+                await server.DisposeAsync();
+                await recorder.DisposeAsync();
+                await log.DisposeAsync();
+                Directory.Delete(root, true);
+            }
+        });
+
         Test("legacy null device IDs recover without resetting other settings", () => InTemp(path =>
         {
             var json = JsonSerializer.SerializeToNode(Settings(), StudioSettings.JsonOptions)!;

@@ -455,6 +455,8 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         {
             while (await tick.WaitForNextTickAsync(stop.Token).ConfigureAwait(false))
             {
+                // The pipe can be busy at startup (NVIDIA) or its listen loop can fail later; claim it once it is free.
+                if (!pipe.IsListening) pipe.TryStart(logFailure: false);
                 // Process snapshots enumerate every process on the machine; probe on the thread pool, not the UI thread.
                 int probePid = (int)pipe.Games.FirstOrDefault().Pid;
                 var processes = ProcessSnapshot.Take();
