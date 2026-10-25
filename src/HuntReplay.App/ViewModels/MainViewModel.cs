@@ -601,6 +601,9 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var directory = recorder.Settings.Storage.Directory;
         var selectedId = SelectedClip?.Clip.Metadata.Id;
+        // Runs after every saved clip, during a match: decode only thumbnails that are new since the last refresh.
+        var decoded = new Dictionary<string, System.Windows.Media.ImageSource>(StringComparer.OrdinalIgnoreCase);
+        foreach (var clip in Clips) if (clip.Thumbnail is { } image) decoded.TryAdd(clip.Clip.ThumbnailPath, image);
         var result = await Task.Run(() =>
         {
             var library = new ClipLibrary(directory, libraryRoot);
@@ -613,7 +616,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             { log.Write(Loc.Format("Log.LibraryMaintenanceSkipped", ex.Message), "WARN"); }
-            return library.List().Take(500).Select(c => new ClipViewModel(c)).ToArray();
+            return library.List().Take(500).Select(c => new ClipViewModel(c, decoded.GetValueOrDefault(c.ThumbnailPath))).ToArray();
         });
         Clips.Clear(); foreach (var clip in result) Clips.Add(clip);
         SelectedClip = Clips.FirstOrDefault(c => c.Clip.Metadata.Id == selectedId);

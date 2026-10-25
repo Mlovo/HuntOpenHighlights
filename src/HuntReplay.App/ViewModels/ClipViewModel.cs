@@ -33,15 +33,19 @@ internal sealed class ClipViewModel
     public string Date => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM · HH:mm", HuntReplay.Core.Localization.Text.Culture);
     public string Detail => $"{Date}   /   {Size}";
     public ImageSource? Thumbnail { get; }
-    public ClipViewModel(LibraryClip clip)
+    // A thumbnail file is written once per clip Id, so one decoded by an earlier library refresh is reused as is.
+    public ClipViewModel(LibraryClip clip, ImageSource? decoded = null)
     {
         Clip = clip;
+        Thumbnail = decoded;
+        if (decoded is not null) return;
         try
         {
             if (!File.Exists(clip.ThumbnailPath)) return;
             var image = new BitmapImage();
             image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad;
-            image.DecodePixelWidth = 640; image.UriSource = new Uri(clip.ThumbnailPath); image.EndInit(); image.Freeze();
+            // Gallery tiles are 240-500 px wide; 640 px decodes kept ~0.9 MB per clip in memory.
+            image.DecodePixelWidth = 400; image.UriSource = new Uri(clip.ThumbnailPath); image.EndInit(); image.Freeze();
             Thumbnail = image;
         }
         catch (Exception ex) when (ex is IOException or NotSupportedException or System.Runtime.InteropServices.COMException) { }
