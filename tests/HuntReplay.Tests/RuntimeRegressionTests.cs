@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Google.Protobuf;
 using HuntReplay.Core.Configuration;
+using HuntReplay.Core.Replay;
 using HuntReplay.Protocol.Generated;
 
 namespace HuntReplay.Tests;
@@ -50,6 +51,55 @@ public static partial class Program
             {
                 foreach (var blocker in blockers) blocker.Dispose();
                 await server.DisposeAsync();
+                await recorder.DisposeAsync();
+                await log.DisposeAsync();
+                Directory.Delete(root, true);
+            }
+        });
+
+        if (OperatingSystem.IsWindows()) TestAsync("stopping the recorder saves every accepted highlight", async () =>
+        {
+            if (AppAssembly() is not { } app) return;
+            var root = Path.Combine(Path.GetTempPath(), "HuntReplay-recorder-test-" + Guid.NewGuid().ToString("N"));
+            var settings = new StudioSettings();
+            settings.Video.Source = CaptureSource.Monitor; settings.Video.Encoder = VideoEncoder.X264; settings.Video.Codec = VideoCodec.H264;
+            settings.Video.Fps = 30; settings.Video.BitrateMbps = 10; settings.Video.Resolution = VideoResolution.P720;
+            settings.Replay.BufferSeconds = 15; settings.Replay.PreEventSeconds = 2; settings.Replay.PostEventSeconds = 5; settings.Replay.Coalesce = false;
+            settings.Storage.Directory = Path.Combine(root, "clips");
+            var log = (IAsyncDisposable)Activator.CreateInstance(app.GetType("HuntReplay.App.Services.StudioLog")!, root)!;
+            var recorderType = app.GetType("HuntReplay.App.Services.RecorderService")!;
+            var recorder = (IAsyncDisposable)Activator.CreateInstance(recorderType, settings, log, Path.Combine(root, "library"))!;
+            int saved = 0;
+            recorderType.GetEvent("ClipSaved")!.AddEventHandler(recorder, new Action<HuntReplay.Core.Storage.LibraryClip>(_ => Interlocked.Increment(ref saved)));
+            object Status() => recorderType.GetProperty("Status")!.GetValue(recorder)!;
+            T Field<T>(string name) => (T)Status().GetType().GetProperty(name)!.GetValue(Status())!;
+            try
+            {
+                var devices = app.GetType("HuntReplay.App.Interop.NativeCaptureEngine")!.GetMethod("EnumerateDevices")!.Invoke(null, null);
+                try { await (Task)recorderType.GetMethod("StartAsync")!.Invoke(recorder, [IntPtr.Zero, devices])!; }
+                catch (Exception ex)
+                {
+                    // CI runners may have no display or audio endpoint; the drain logic needs a real capture.
+                    Console.WriteLine("SKIP: capture unavailable: " + ex.Message);
+                    return;
+                }
+                for (int wait = 0; wait < 150 && Field<HuntReplay.Core.Media.BufferStatus>("Buffer").Seconds < 3; wait++) await Task.Delay(100);
+                var tryHighlight = recorderType.GetMethod("TryHighlight")!;
+                long now = (long)recorderType.GetProperty("NowUs")!.GetValue(recorder)!;
+                // Three matches, so three plans; only two exports run at once and none has reached its post-roll yet.
+                for (int i = 0; i < 3; i++)
+                    True((bool)tryHighlight.Invoke(recorder, [new HighlightEvent("session", "request" + i, "match" + i, "HUNTER_KILLED", now)])!);
+                Equal(3, Field<int>("Pending"));
+                await (Task)recorderType.GetMethod("StopAsync")!.Invoke(recorder, null)!;
+                Equal(3, saved);
+                Equal(0, Field<int>("Pending"));
+                Equal(0, Field<int>("Exports"));
+                var files = Directory.GetFiles(settings.Storage.Directory);
+                Equal(3, files.Count(f => f.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && !f.EndsWith(".partial.mp4", StringComparison.OrdinalIgnoreCase)));
+                Equal(3, files.Length);
+            }
+            finally
+            {
                 await recorder.DisposeAsync();
                 await log.DisposeAsync();
                 Directory.Delete(root, true);
