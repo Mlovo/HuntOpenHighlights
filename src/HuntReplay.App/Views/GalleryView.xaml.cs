@@ -955,8 +955,8 @@ public partial class GalleryView : UserControl
         }
         catch (Exception ex)
         {
+            // The service never leaves a partial file at targetPath, and a file already there is the user's.
             UpdateStatusMessage(Loc.Format("Gallery.ExportError", ex.Message));
-            try { if (File.Exists(targetPath)) File.Delete(targetPath); } catch { }
         }
         finally
         {

@@ -99,12 +99,15 @@ public sealed class VideoTrimmingService : IVideoTrimmingService
                 return cancellationToken.IsCancellationRequested ? 1 : 0;
             };
 
+            // The engine deletes its output on any failure, so it never writes to the chosen path directly:
+            // a file the user agreed to overwrite is replaced only by a finished fragment.
+            string temp = fullTarget + "." + Guid.NewGuid().ToString("N")[..8] + ".partial.mp4";
             int result;
             try
             {
                 result = NativeMethods.hr_trim(
                     fullSource,
-                    fullTarget,
+                    temp,
                     startSeconds,
                     endSeconds,
                     accurate ? 1 : 0,
@@ -116,25 +119,30 @@ public sealed class VideoTrimmingService : IVideoTrimmingService
                 GC.KeepAlive(progressCallback);
             }
 
-            if (cancellationToken.IsCancellationRequested)
+            try
             {
-                TryCleanupFile(fullTarget);
-                throw new OperationCanceledException(cancellationToken);
-            }
+                if (cancellationToken.IsCancellationRequested)
+                    throw new OperationCanceledException(cancellationToken);
 
-            if (result < 0)
-            {
-                TryCleanupFile(fullTarget);
-                string? nativeError = NativeMethods.GetLastError();
-                string message = !string.IsNullOrWhiteSpace(nativeError)
-                    ? nativeError
-                    : Text.Get("Trim.EngineError");
-                throw new InvalidOperationException(message);
-            }
+                if (result < 0)
+                {
+                    string? nativeError = NativeMethods.GetLastError();
+                    string message = !string.IsNullOrWhiteSpace(nativeError)
+                        ? nativeError
+                        : Text.Get("Trim.EngineError");
+                    throw new InvalidOperationException(message);
+                }
 
-            if (!File.Exists(fullTarget))
+                if (!File.Exists(temp))
+                {
+                    throw new IOException(Text.Get("Trim.OutputMissing"));
+                }
+
+                File.Move(temp, fullTarget, overwrite: true);
+            }
+            finally
             {
-                throw new IOException(Text.Get("Trim.OutputMissing"));
+                TryCleanupFile(temp);
             }
 
             progress?.Report(1.0);

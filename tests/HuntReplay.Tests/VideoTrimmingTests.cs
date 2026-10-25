@@ -478,24 +478,8 @@ public static partial class Program
 
             await TestAsync("service trim executes end-to-end via VideoTrimmingService", async () =>
             {
-                string[] candidates = [
-                    Path.GetFullPath("src/HuntReplay.App/bin/x64/Release/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll"),
-                    Path.GetFullPath("src/HuntReplay.App/bin/x64/Debug/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll"),
-                    Path.GetFullPath("src/HuntReplay.App/bin/Release/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll"),
-                    Path.GetFullPath("src/HuntReplay.App/bin/Debug/net8.0-windows10.0.19041.0/win-x64/HuntReplayStudio.dll")
-                ];
-                string? appDll = null;
-                foreach (var c in candidates)
-                {
-                    if (File.Exists(c)) { appDll = c; break; }
-                }
-                if (appDll == null) return;
-
-                var asm = Assembly.LoadFrom(appDll);
-                var serviceType = asm.GetType("HuntReplay.App.Services.VideoTrimmingService")!;
-                var instanceProp = serviceType.GetProperty("Instance")!;
-                var service = instanceProp.GetValue(null)!;
-                var trimMethod = serviceType.GetMethod("TrimVideoAsync")!;
+                if (LoadTrimmingService() is not { } loaded) return;
+                var (service, trimMethod) = loaded;
 
                 string tempDir = Path.Combine(Path.GetTempPath(), "HuntReplay-svc-test-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(tempDir);
@@ -521,6 +505,70 @@ public static partial class Program
                     if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
                 }
             });
+
+            await TestAsync("service trim never deletes an existing target it was allowed to overwrite", async () =>
+            {
+                if (LoadTrimmingService() is not { } loaded) return;
+                var (service, trimMethod) = loaded;
+                string tempDir = Path.Combine(Path.GetTempPath(), "HuntReplay-svc-test-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempDir);
+                try
+                {
+                    string source = GenerateSampleClip(tempDir, "svc_source.mp4", 6.0, hasAudio: true);
+                    string target = Path.Combine(tempDir, "other_clip.mp4");
+                    byte[] original = [1, 2, 3, 4];
+                    File.WriteAllBytes(target, original);
+
+                    // A range past the end of the clip fails inside the engine, after it opened its output.
+                    await ThrowsAsync<InvalidOperationException>(() =>
+                        (Task<string>)trimMethod.Invoke(service, [source, target, 100.0, 101.0, false, null, CancellationToken.None])!);
+                    True(File.ReadAllBytes(target).AsSpan().SequenceEqual(original));
+
+                    // Cancels from inside the engine's first progress report, so the engine itself aborts mid-write.
+                    using var cancelled = new CancellationTokenSource();
+                    var cancelling = new SyncProgress(_ => cancelled.Cancel());
+                    await ThrowsAsync<OperationCanceledException>(() =>
+                        (Task<string>)trimMethod.Invoke(service, [source, target, 1.0, 5.0, false, cancelling, cancelled.Token])!);
+                    True(File.ReadAllBytes(target).AsSpan().SequenceEqual(original));
+
+                    // A finished fragment replaces the file and leaves no temporary output behind.
+                    await (Task<string>)trimMethod.Invoke(service, [source, target, 1.0, 4.0, false, null, CancellationToken.None])!;
+                    True(ProbeMedia(target).VideoStreams.Contains("h264"));
+                    Equal(2, Directory.GetFiles(tempDir).Length);
+                }
+                finally
+                {
+                    if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+                }
+            });
         }
+    }
+
+    // Progress<T> posts to the thread pool; this reports on the engine's own callback thread.
+    private sealed class SyncProgress(Action<double> report) : IProgress<double>
+    {
+        public void Report(double value) => report(value);
+    }
+
+    // A built HuntReplayStudio.dll, so tests can drive production App types; null when the app has not been built.
+    private static Assembly? AppAssembly()
+    {
+        string?[] candidates = [
+            TryFindRepoFile("src", "HuntReplay.App", "bin", "x64", "Release", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
+            TryFindRepoFile("src", "HuntReplay.App", "bin", "x64", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
+            TryFindRepoFile("src", "HuntReplay.App", "bin", "Release", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll"),
+            TryFindRepoFile("src", "HuntReplay.App", "bin", "Debug", "net8.0-windows10.0.19041.0", "win-x64", "HuntReplayStudio.dll")
+        ];
+        // Newest build wins: a stale output folder must not test old code.
+        string? appDll = candidates.OfType<string>().OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+        if (appDll == null) Console.WriteLine("SKIP: HuntReplayStudio.dll not built; App-level tests do nothing.");
+        return appDll == null ? null : Assembly.LoadFrom(appDll);
+    }
+
+    private static (object Service, MethodInfo Trim)? LoadTrimmingService()
+    {
+        if (AppAssembly() is not { } app) return null;
+        var serviceType = app.GetType("HuntReplay.App.Services.VideoTrimmingService")!;
+        return (serviceType.GetProperty("Instance")!.GetValue(null)!, serviceType.GetMethod("TrimVideoAsync")!);
     }
 }
