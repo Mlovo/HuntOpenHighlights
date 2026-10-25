@@ -30,7 +30,6 @@ public sealed class ThemeService : INotifyPropertyChanged
     }
 
     public bool IsDark => currentTheme == AppTheme.Dark;
-    public bool IsLight => currentTheme == AppTheme.Light;
 
     public string ThemeCode => currentTheme == AppTheme.Dark ? "dark" : "light";
 

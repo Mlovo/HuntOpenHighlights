@@ -12,7 +12,6 @@ internal static class RuntimeAssets
     private static readonly object Gate = new();
     private static bool loaded;
     private static IntPtr nativeLibrary;
-    public static string? RuntimeDirectory { get; private set; }
 
     public static void EnsureLoaded()
     {
@@ -60,7 +59,6 @@ internal static class RuntimeAssets
             if (nativeLibrary == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error(), Text.Get("Runtime.LoadFailed"));
             NativeLibrary.SetDllImportResolver(assembly, (name, _, _) => name == "HuntReplay.Media.dll" ? nativeLibrary : IntPtr.Zero);
             if (NativeMethods.hr_abi_version() != 1) throw new InvalidOperationException(Text.Get("Runtime.AbiMismatch"));
-            RuntimeDirectory = root;
             loaded = true;
             DeleteStaleRuntimes(root);
         }

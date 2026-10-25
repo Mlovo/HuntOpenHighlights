@@ -20,15 +20,12 @@ public sealed class LocalizationService : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public bool IsRussian => Text.Language == Text.Russian;
-    public bool IsEnglish => Text.Language == Text.English;
 
     public void ToggleLanguage() => Text.SetLanguage(IsRussian ? Text.English : Text.Russian);
 
     public void SetLanguage(string? code) => Text.SetLanguage(code);
 
     public string this[string key] => Text.Get(key);
-
-    public string Get(string key) => Text.Get(key);
 
     public string Format(string key, params object?[] args) => Text.Format(key, args);
 }

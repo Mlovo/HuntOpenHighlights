@@ -4,36 +4,10 @@ using HuntReplay.Core.Localization;
 namespace HuntReplay.App.Services;
 
 /// <summary>
-/// Service contract for asynchronous native video trimming.
+/// Trims a clip between two timestamps with the HuntReplay.Media.dll engine, without modifying the source.
+/// accurate re-encodes the cut boundaries; otherwise packets are stream-copied. Progress reports values in [0, 1].
 /// </summary>
-public interface IVideoTrimmingService
-{
-    /// <summary>
-    /// Asynchronously trims a source video file between the specified start and end timestamps,
-    /// saving the trimmed output to targetPath without modifying the source file.
-    /// </summary>
-    /// <param name="sourcePath">Absolute path to source video file (must exist).</param>
-    /// <param name="targetPath">Absolute destination path for trimmed MP4 file.</param>
-    /// <param name="startSeconds">Start time boundary in seconds (>= 0.0).</param>
-    /// <param name="endSeconds">End time boundary in seconds (> startSeconds).</param>
-    /// <param name="accurate">True for frame-accurate cut with boundary re-encoding; false for fast stream copy.</param>
-    /// <param name="progress">Optional progress reporter receiving normalized progress values in [0.0, 1.0].</param>
-    /// <param name="cancellationToken">Cancellation token to abort the trimming operation.</param>
-    /// <returns>The verified full path to the generated trimmed video file.</returns>
-    Task<string> TrimVideoAsync(
-        string sourcePath,
-        string targetPath,
-        double startSeconds,
-        double endSeconds,
-        bool accurate = false,
-        IProgress<double>? progress = null,
-        CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// Production video trimming service backed by HuntReplay.Media.dll native engine.
-/// </summary>
-public sealed class VideoTrimmingService : IVideoTrimmingService
+public sealed class VideoTrimmingService
 {
     public static VideoTrimmingService Instance { get; } = new();
 

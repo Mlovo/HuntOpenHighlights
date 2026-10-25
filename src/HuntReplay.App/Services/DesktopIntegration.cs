@@ -59,7 +59,7 @@ internal static class DesktopIntegration
         }
         else key.DeleteValue("HuntReplayStudio", false);
     }
-    public static void NotifySaved(LibraryClip clip, StudioSettings settings, StudioLog log)
+    public static void NotifySaved(StudioSettings settings)
     {
         if (settings.System.SoundOnSave) SystemSounds.Asterisk.Play();
     }

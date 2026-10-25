@@ -699,7 +699,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private void OnSaved(LibraryClip clip) => OnUi(async () =>
     {
         overlay.Notify(recorder.Settings.System, OverlayKind.Info, Loc["Overlay.ClipSaved"], clip.Metadata.FileName);
-        try { await RefreshClipsAsync(); DesktopIntegration.NotifySaved(clip, recorder.Settings, log); Message = Loc.Format("Status.ClipSaved", clip.Metadata.FileName); }
+        try { await RefreshClipsAsync(); DesktopIntegration.NotifySaved(recorder.Settings); Message = Loc.Format("Status.ClipSaved", clip.Metadata.FileName); }
         catch (Exception ex) { Error(ex); }
     });
     private void OnUi(Action action)

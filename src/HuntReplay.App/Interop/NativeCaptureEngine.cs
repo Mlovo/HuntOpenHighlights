@@ -45,7 +45,6 @@ internal sealed class NativeCaptureEngine : IDisposable
         }
     }
 
-    public Exception? CallbackError => callbackError;
     public void Stop() { if (session != IntPtr.Zero) NativeMethods.hr_stop(session); }
 
     // Caller must retain this session until all exports have finished (RecorderService enforces it).

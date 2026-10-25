@@ -145,7 +145,6 @@ public sealed class ReplaySettings
     public bool Coalesce { get; set; } = true;
     public int CoalesceGapSeconds { get; set; } = 15;
     public int MaxSequenceSeconds { get; set; } = 60;
-    public bool SmartTrim { get; set; } = true;
     public int PreEventSeconds { get; set; } = 20;
     public bool HunterKilled { get; set; } = true;
     public bool PlayerDowned { get; set; } = true;
