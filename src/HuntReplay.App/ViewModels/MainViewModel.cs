@@ -138,7 +138,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string Message
     {
         get => customMessage ?? Loc["Footer.DefaultMessage"];
-        private set { if (SetProperty(ref customMessage, value)) OnPropertyChanged(); }
+        internal set => SetProperty(ref customMessage, value);
     }
     public string Diagnostics
     {

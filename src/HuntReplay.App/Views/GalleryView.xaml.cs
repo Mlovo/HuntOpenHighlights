@@ -1064,18 +1064,7 @@ public partial class GalleryView : UserControl
 
     private void UpdateStatusMessage(string message)
     {
-        if (DataContext is MainViewModel mainVm)
-        {
-            try
-            {
-                var prop = typeof(MainViewModel).GetProperty("Message",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                prop?.SetValue(mainVm, message);
-            }
-            catch
-            {
-            }
-        }
+        if (DataContext is MainViewModel mainVm) mainVm.Message = message;
     }
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
