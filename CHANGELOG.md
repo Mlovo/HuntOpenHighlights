@@ -2,6 +2,29 @@
 
 All notable changes to **HuntReplay Studio** are documented in this file.
 
+## [0.2.1] - 2026-10-25
+
+### Added
+- **Select several clips**: tick the circle on a clip, or Ctrl- and Shift-click. Shift fills everything between the selected clips and the one you click; Ctrl+A selects all. Delete them with one confirmation: a clip that is open in another program is skipped and reported, the rest are deleted.
+- **Selection mode**: with two or more clips selected, clicking a clip plays it without losing the selection. A bar next to the search box shows how many clips are selected, with Delete selected and Clear selection (or Esc).
+- **Clip menu**: the ... button on a clip, a right-click or Shift+F10 opens Trim, Rename (F2), Show in Explorer, Open with system player and Delete (Del).
+
+### Changed
+- Redesigned clip cards: the preview fills the card with the event and length on it, and the title is the date and time, or your own name for a renamed clip. The play button, selection circle and menu appear when you point at a card.
+- Keyboard in the gallery: arrows move between clips, Enter plays or pauses, Delete and F2 work on the selection.
+- The buttons under the player act on the clip in the player, which its card marks "In player".
+- Dashboard: the sidebar tagline is gone, recent highlights keep three columns, and the session log can be collapsed.
+- Lower memory use when the library refreshes during a match.
+
+### Fixed
+- Saving a trimmed fragment over an existing clip and then cancelling, or hitting an error, deleted that clip. The file is now replaced only once the fragment is finished.
+- If the Highlights connection was busy at startup or dropped later, Studio stopped receiving game events until restarted. It now reconnects.
+- Cancelling a fragment export could break a newer one, which then could no longer be cancelled.
+- Interrupted exports left hidden .partial.mp4 files in the clips folder; they are now cleaned up.
+- Error messages could end with an old, unrelated FFmpeg warning.
+
+---
+
 ## [0.2.0] - 2026-10-18
 
 ### Added
