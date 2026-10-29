@@ -18,6 +18,7 @@ All notable changes to **HuntReplay Studio** are documented in this file.
 - Clip cards show the event and the date and time; event badges are coloured (kills green, downs red, multi-kills blue).
 - The gallery opens the newest clip on the first visit instead of an empty player.
 - The dashboard banner has new artwork.
+- Recent highlights on the dashboard keep the video's shape instead of being cropped into a strip, and a wider window shows more of them (up to six).
 - Theme and language buttons moved to the bottom of the sidebar; the sidebar's Open clips folder link and the LOCAL label are gone (the gallery header still opens the folder).
 
 ---

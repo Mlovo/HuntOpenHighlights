@@ -65,7 +65,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<LogEntry> Events { get; } = [];
     public ObservableCollection<ClipViewModel> Clips { get; } = [];
     public ICollectionView FilteredClips { get; }
-    public IEnumerable<ClipViewModel> RecentClips => Clips.Take(3);
+    // The dashboard sets how many fit side by side at its width, so thumbnails keep a sensible size.
+    private int recentCount = 3;
+    public int RecentCount { get => recentCount; set { if (SetProperty(ref recentCount, value)) OnPropertyChanged(nameof(RecentClips)); } }
+    public IEnumerable<ClipViewModel> RecentClips => Clips.Take(RecentCount);
     public bool HasClips => Clips.Count > 0;
     public int ClipCount => Clips.Count;
     public LocalizationService Loc => LocalizationService.Instance;
