@@ -17,8 +17,18 @@
   <SolidColorBrush x:Key="PlayerBackground" Color="#E5EDE7"/>
   <SolidColorBrush x:Key="PlayerPlaceholder" Color="#DCE6DF"/>
   <SolidColorBrush x:Key="HeroBorder" Color="#CADBCB"/>
-  <SolidColorBrush x:Key="HeroCurves" Color="#8FA892"/>
-  <SolidColorBrush x:Key="HeroAccentText" Color="#3C662E"/>
+  <!-- Dashboard banner art: the same bayou scene at dawn. -->
+  <LinearGradientBrush x:Key="HeroSky" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#DCEADF"/>
+    <GradientStop Color="#E9EEDF" Offset="0.5"/>
+    <GradientStop Color="#F4E9CF" Offset="0.72"/>
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="HeroMoon" Color="#FFF6DC"/>
+  <SolidColorBrush x:Key="HeroFar" Color="#A7BCAA"/>
+  <SolidColorBrush x:Key="HeroInk" Color="#2B3B30"/>
+  <SolidColorBrush x:Key="HeroFog" Color="#FFFFFF"/>
+  <SolidColorBrush x:Key="HeroWater" Color="#C3D4C7"/>
+  <SolidColorBrush x:Key="HeroLantern" Color="#D88A2A"/>
   <!-- Control states -->
   <SolidColorBrush x:Key="FooterText" Color="#5A6B63"/>
   <SolidColorBrush x:Key="ButtonHoverBackground" Color="#D8E8D5"/>

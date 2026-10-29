@@ -226,11 +226,13 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string BufferTarget => $"/ {TimeSpan.FromSeconds(recorder.Settings.Replay.BufferSeconds):mm\\:ss}";
     public double BufferFill => Math.Clamp(status.Buffer.Seconds / recorder.Settings.Replay.BufferSeconds * 100, 0, 100);
     public string MemoryText => $"{status.Buffer.Bytes / 1024d / 1024:F1} {Loc["Dash.RamSuffix"]}";
-    public string GpuStatus => status.Running ? status.Encoder :
-        string.Format(Loc["Dash.GpuWaiting"],
-            DeviceOption.ResolveGpu(recorder.Settings.Video.GpuDevice, Devices)?.Name
-            ?? Devices.FirstOrDefault(d => d.Kind == 3)?.Name
-            ?? Loc["Dash.GpuUnknown"]);
+    private string? GpuName => DeviceOption.ResolveGpu(recorder.Settings.Video.GpuDevice, Devices)?.Name ?? Devices.FirstOrDefault(d => d.Kind == 3)?.Name;
+    public string GpuStatus => status.Running ? status.Encoder : string.Format(Loc["Dash.GpuWaiting"], GpuName ?? Loc["Dash.GpuUnknown"]);
+    // Shown beside the adapter on the dashboard. Capture and encoding always run on Direct3D 11.
+    public string GpuApi => "Direct3D 11";
+    private GpuInfo? GpuDetails => GpuName is { } name ? GpuInfo.For(name) : null;
+    public string GpuDriver => GpuDetails?.Driver ?? "—";
+    public string GpuMemory => GpuDetails?.MemoryBytes is { } bytes ? Loc.Format("Unit.GigabytesValue", Math.Round(bytes / (double)(1L << 30))) : "—";
     public string EncodingModeLabel => recorder.Settings.Video.Encoder == VideoEncoder.X264 ? Loc["Dash.CpuExplicit"] : Loc["Dash.GpuEncoding"];
     public string VideoStatus => status.Running ? $"{status.Native.Width} × {status.Native.Height} · {recorder.Settings.Video.Fps} FPS · {recorder.Settings.Video.Codec}" :
         Loc["Dash.WgcD3D"];
@@ -445,7 +447,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         try { Devices = await Task.Run(NativeCaptureEngine.EnumerateDevices); }
         catch (Exception ex) { Error(ex); Devices = []; }
         RefreshDeviceSelections();
-        OnPropertyChanged(nameof(GpuStatus));
+        OnPropertyChanged(nameof(GpuStatus)); OnPropertyChanged(nameof(GpuDriver)); OnPropertyChanged(nameof(GpuMemory));
     }
 
     private void RefreshDeviceSelections()

@@ -3,13 +3,53 @@
     <StackPanel Margin="0,0,6,0">
       <Border CornerRadius="10" BorderBrush="{DynamicResource HeroBorder}" BorderThickness="1" ClipToBounds="True" Background="{DynamicResource HeroBackground}">
         <Grid MinHeight="225">
-          <Canvas HorizontalAlignment="Right" Width="335" Opacity="0.48" ClipToBounds="True">
-            <Path Data="M-20,216 C70,80 130,220 280,-10 M-20,195 C65,65 120,200 260,-20 M-20,174 C62,43 105,180 240,-30 M-20,153 C52,25 90,155 220,-40 M80,270 C220,180 160,165 350,10 M100,285 C240,195 180,190 370,30 M120,300 C260,210 200,215 390,50" Stroke="{DynamicResource HeroCurves}" StrokeThickness="0.8"/>
-            <Ellipse Width="126" Height="126" Stroke="{DynamicResource HeroCurves}" StrokeThickness="1" Canvas.Left="134" Canvas.Top="49"/>
-            <Ellipse Width="108" Height="108" Stroke="{DynamicResource HeroCurves}" StrokeThickness="1" Canvas.Left="143" Canvas.Top="58"/>
-            <Path Data="M197,26 L197,81 M197,143 L197,198 M111,112 L166,112 M228,112 L283,112 M185,112 L209,112 M197,100 L197,124" Stroke="{DynamicResource HeroAccentText}" StrokeThickness="1"/>
-            <TextBlock Text="REC // 1896" Canvas.Left="162" Canvas.Top="205" FontFamily="Consolas" FontSize="10" Foreground="{DynamicResource HeroAccentText}"/>
-          </Canvas>
+          <!-- Original artwork, not taken from the game: a bayou at night with dead cypresses, moss, a stilt shack and fog.
+               It fades out towards the left so the text stays readable. -->
+          <Viewbox Stretch="UniformToFill" VerticalAlignment="Bottom" IsHitTestVisible="False">
+            <Viewbox.OpacityMask>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="Transparent" Offset="0.3"/><GradientStop Color="#55000000" Offset="0.48"/><GradientStop Color="Black" Offset="0.7"/></LinearGradientBrush>
+            </Viewbox.OpacityMask>
+            <Canvas Width="1200" Height="260" ClipToBounds="True">
+              <Rectangle Width="1200" Height="260" Fill="{DynamicResource HeroSky}"/>
+              <Ellipse Width="240" Height="240" Canvas.Left="840" Canvas.Top="-58" Fill="{DynamicResource HeroMoon}">
+                <Ellipse.OpacityMask><RadialGradientBrush><GradientStop Color="#55000000"/><GradientStop Color="Transparent" Offset="1"/></RadialGradientBrush></Ellipse.OpacityMask>
+              </Ellipse>
+              <Ellipse Width="54" Height="54" Canvas.Left="933" Canvas.Top="35" Fill="{DynamicResource HeroMoon}"/>
+              <Path Data="M876,74 q6,-5 12,0 q6,-5 12,0 M903,56 q4,-4 9,0 q5,-4 9,0 M846,92 q3,-3 7,0 q4,-3 7,0" Stroke="{DynamicResource HeroInk}" StrokeThickness="1.4" StrokeLineJoin="Round"/>
+              <Path Fill="{DynamicResource HeroFar}" Data="M0,182 L30,176 42,160 48,176 90,172 104,150 112,171 160,168 178,140 186,168 240,170 262,152 270,170 330,166 350,134 358,166 420,170 440,156 450,170 520,168 536,146 546,168 610,172 628,150 640,171 700,168 720,138 730,168 800,170 816,152 826,170 880,166 900,144 910,168 980,172 996,156 1006,171 1070,168 1090,146 1100,170 1160,170 1180,154 1190,170 1200,172 1200,260 0,260 Z"/>
+              <Rectangle Width="1200" Height="56" Canvas.Top="152" Fill="{DynamicResource HeroFog}">
+                <Rectangle.OpacityMask><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="Transparent"/><GradientStop Color="#40000000" Offset="0.55"/><GradientStop Color="Transparent" Offset="1"/></LinearGradientBrush></Rectangle.OpacityMask>
+              </Rectangle>
+              <Rectangle Width="1200" Height="62" Canvas.Top="200" Fill="{DynamicResource HeroWater}"/>
+              <Path Data="M942,212 L978,212 M950,220 L970,220 M938,229 L982,229 M954,238 L967,238 M946,247 L974,247" Stroke="{DynamicResource HeroMoon}" StrokeThickness="1.5" Opacity="0.45"/>
+              <!-- Stilt shack with a lit window. -->
+              <Ellipse Width="110" Height="70" Canvas.Left="698" Canvas.Top="140" Fill="{DynamicResource HeroLantern}">
+                <Ellipse.OpacityMask><RadialGradientBrush><GradientStop Color="#70000000"/><GradientStop Color="Transparent" Offset="1"/></RadialGradientBrush></Ellipse.OpacityMask>
+              </Ellipse>
+              <Path Fill="{DynamicResource HeroInk}" Data="M703,163 L752,137 801,163 Z M714,161 L792,161 792,199 714,199 Z M792,191 L842,191 842,195 792,195 Z"/>
+              <Path Stroke="{DynamicResource HeroInk}" StrokeThickness="2.5" Data="M720,199 L720,214 M740,199 L740,216 M766,199 L766,214 M786,199 L786,216 M814,195 L814,212 M838,195 L838,213"/>
+              <Rectangle Width="14" Height="12" Canvas.Left="746" Canvas.Top="171" Fill="{DynamicResource HeroLantern}"/>
+              <Path Data="M742,214 L764,214 M747,222 L759,222 M750,230 L756,230" Stroke="{DynamicResource HeroLantern}" StrokeThickness="1.5" Opacity="0.55"/>
+              <!-- A smaller dead tree on the far bank. -->
+              <Path Fill="{DynamicResource HeroInk}" Data="M598,205 C601,180 603,150 605,120 C606,100 605,85 607,68 L612,68 C613,88 613,108 614,124 C616,155 620,185 627,205 Z"/>
+              <Path Stroke="{DynamicResource HeroInk}" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeThickness="2.5" Data="M607,110 C590,100 580,98 566,90 M612,95 C628,84 640,82 652,76"/>
+              <Path Stroke="{DynamicResource HeroInk}" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeThickness="1.4" Data="M609,80 C604,70 600,64 594,58 M575,94 q-2,8 1,16 M586,99 q2,8 -1,14 M636,84 q-2,8 1,15 M646,80 q2,7 -1,12"/>
+              <!-- The big cypress in front, its bank and reeds. -->
+              <Path Fill="{DynamicResource HeroInk}" Data="M990,262 C1010,246 1040,240 1070,238 C1110,236 1160,242 1200,236 L1200,262 Z"/>
+              <Path Fill="{DynamicResource HeroInk}" Data="M1060,262 C1065,232 1069,200 1071,160 C1073,120 1071,80 1075,36 L1086,36 C1088,80 1088,120 1090,160 C1092,200 1099,232 1112,262 Z"/>
+              <Path Stroke="{DynamicResource HeroInk}" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeThickness="4" Data="M1077,120 C1050,105 1030,100 1004,88 M1084,90 C1110,72 1130,66 1160,58 M1086,150 C1120,140 1150,140 1192,128"/>
+              <Path Stroke="{DynamicResource HeroInk}" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeThickness="2.2" Data="M1004,88 C995,84 990,78 984,70 M1160,58 C1170,54 1178,46 1184,38 M1080,58 C1070,40 1062,30 1050,18 M1040,99 C1036,91 1034,87 1028,81"/>
+              <Path Stroke="{DynamicResource HeroInk}" StrokeThickness="1.2" Opacity="0.9" StrokeLineJoin="Round" Data="M1010,90 q-3,10 1,20 q-3,10 0,18 M1020,95 q3,12 -1,24 M1032,99 q-2,9 1,16 M1046,103 q3,10 -1,20 M1120,68 q3,10 -1,22 q3,8 0,14 M1135,64 q-3,12 1,24 M1148,60 q2,9 -1,18 M1160,136 q-3,10 1,20 M1172,133 q3,9 0,18 M1184,130 q-2,8 1,14"/>
+              <Path Stroke="{DynamicResource HeroInk}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M980,262 L984,238 M988,262 L986,230 M996,262 L1000,242 M1040,262 L1037,234 M1046,262 L1050,230 M1124,262 L1128,240 M1132,262 L1130,244"/>
+              <Rectangle Width="1200" Height="34" Canvas.Top="196" Fill="{DynamicResource HeroFog}">
+                <Rectangle.OpacityMask><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="Transparent"/><GradientStop Color="#2A000000" Offset="0.5"/><GradientStop Color="Transparent" Offset="1"/></LinearGradientBrush></Rectangle.OpacityMask>
+              </Rectangle>
+              <Ellipse Width="3" Height="3" Canvas.Left="842" Canvas.Top="178" Fill="{DynamicResource HeroLantern}" Opacity="0.85"/>
+              <Ellipse Width="2.5" Height="2.5" Canvas.Left="872" Canvas.Top="160" Fill="{DynamicResource HeroLantern}" Opacity="0.7"/>
+              <Ellipse Width="3" Height="3" Canvas.Left="906" Canvas.Top="190" Fill="{DynamicResource HeroLantern}" Opacity="0.8"/>
+              <Ellipse Width="2.5" Height="2.5" Canvas.Left="662" Canvas.Top="150" Fill="{DynamicResource HeroLantern}" Opacity="0.7"/>
+            </Canvas>
+          </Viewbox>
           <StackPanel Margin="28,25" MaxWidth="580" HorizontalAlignment="Left">
             <StackPanel Orientation="Horizontal"><Ellipse Width="6" Height="6" Fill="{Binding IsGameConnected, Converter={StaticResource StatusBrush}}" Margin="0,0,9,0"/><TextBlock Text="{Binding GameStatus}" FontSize="11" Foreground="{DynamicResource Accent}"/></StackPanel>
             <TextBlock Text="{Binding Loc[Dash.HeroTitle]}" FontSize="27" FontWeight="SemiBold" LineHeight="35" Margin="0,16,0,11"/>
@@ -24,7 +64,9 @@
           <ProgressBar Grid.Row="2" Height="3" Value="{Binding BufferFill, Mode=OneWay}" Maximum="100"/>
           <TextBlock Grid.Row="3" Text="{Binding PendingText}" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,13,0,0"/>
         </Grid></Border>
-        <Border Grid.Column="2" Style="{DynamicResource Card}"><StackPanel><TextBlock Text="{Binding Loc[Dash.RecordingEngine]}" Style="{DynamicResource Eyebrow}"/><TextBlock Text="{Binding GpuStatus}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis" ToolTip="{Binding GpuStatus}" Margin="0,17,0,9"/><TextBlock Text="{Binding VideoStatus}" Foreground="{DynamicResource Accent}" FontSize="11"/><TextBlock Text="{Binding CaptureDetail}" Style="{DynamicResource MutedText}" FontSize="10" Margin="0,13,0,0"/></StackPanel></Border>
+        <Border Grid.Column="2" Style="{DynamicResource Card}"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="{Binding Loc[Dash.RecordingEngine]}" Style="{DynamicResource Eyebrow}"/><TextBlock Text="{Binding GpuStatus}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis" ToolTip="{Binding GpuStatus}" Margin="0,17,0,9"/><TextBlock Text="{Binding VideoStatus}" Foreground="{DynamicResource Accent}" FontSize="11"/><TextBlock Text="{Binding CaptureDetail}" Style="{DynamicResource MutedText}" FontSize="10" Margin="0,13,0,0"/></StackPanel>
+          <!-- Adapter facts on their own tinted panel: the API capture runs on, the driver release and dedicated video memory. -->
+          <Border Grid.Column="1" Margin="18,0,0,0" Background="{DynamicResource SurfaceRaised}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="14,11" VerticalAlignment="Top" MinWidth="200"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*" MinWidth="24"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions><TextBlock Grid.Row="0" Text="{Binding Loc[Dash.GpuApi]}" Foreground="{DynamicResource Muted}" FontSize="11" VerticalAlignment="Center" Margin="0,0,0,8"/><TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding GpuApi}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,0,8"/><TextBlock Grid.Row="1" Text="{Binding Loc[Dash.GpuDriver]}" Foreground="{DynamicResource Muted}" FontSize="11" VerticalAlignment="Center" Margin="0,0,0,8"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding GpuDriver}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,0,8"/><TextBlock Grid.Row="2" Text="{Binding Loc[Dash.GpuMemory]}" Foreground="{DynamicResource Muted}" FontSize="11" VerticalAlignment="Center"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding GpuMemory}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid></Border></Grid></Border>
       </Grid>
       <Grid Margin="0,16,0,26"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <Button Style="{DynamicResource PrimaryButton}" Command="{Binding SaveCommand}" HorizontalAlignment="Left" Padding="20,13"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE74E;" FontFamily="Segoe MDL2 Assets" Foreground="{DynamicResource Accent}" Margin="0,2,12,0"/><TextBlock Text="{Binding ManualLabel}" Foreground="{DynamicResource Text}" FontWeight="SemiBold"/><Border Background="{DynamicResource AccentDark}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="3" Padding="5,1" Margin="17,-2,0,-2"><TextBlock Text="{Binding HotkeyLabel}" FontSize="10" Foreground="{DynamicResource Accent}"/></Border></StackPanel></Button>
