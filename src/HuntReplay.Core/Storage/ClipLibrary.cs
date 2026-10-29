@@ -18,6 +18,8 @@ public sealed record ClipMetadata
     public string Encoder { get; init; } = "";
     public bool TruncatedStart { get; init; }
     public bool TruncatedEnd { get; init; }
+    /// <summary>Starred in the gallery. Lives in the record, so it follows a rename and goes with a delete.</summary>
+    public bool Favorite { get; init; }
 }
 
 /// <summary>
@@ -119,6 +121,18 @@ public sealed class ClipLibrary(string directory, string storeRoot)
             // The record is authoritative now; 0.1.2 leftovers beside the old name are retired best-effort.
             RetireLegacy(clip.FullPath, renamed.Metadata.Id);
             return renamed;
+        }
+    }
+
+    /// <summary>Stars or unstars a clip. The MP4 is never touched; a 0.1.2 clip is adopted into the store on the way.</summary>
+    public LibraryClip SetFavorite(LibraryClip clip, bool favorite)
+    {
+        lock (Gate)
+        {
+            EnsureOwned(clip);
+            var updated = WriteRecord(clip.FullPath, clip.Metadata with { Favorite = favorite, Id = FreeId(clip) });
+            if (!string.Equals(clip.RecordPath, updated.RecordPath, StringComparison.OrdinalIgnoreCase)) RetireLegacy(clip.FullPath, updated.Metadata.Id);
+            return updated;
         }
     }
 

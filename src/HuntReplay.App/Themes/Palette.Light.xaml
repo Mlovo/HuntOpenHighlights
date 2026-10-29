@@ -40,4 +40,11 @@
   <SolidColorBrush x:Key="ScrollThumb" Color="#CAD6D0"/>
   <SolidColorBrush x:Key="ScrollThumbHover" Color="#AABCB2"/>
   <sys:Double x:Key="ThumbShadowOpacity">0.3</sys:Double>
+  <!-- Gallery event badges: kills green, downs red, multi-kills muted blue, manual saves neutral. -->
+  <SolidColorBrush x:Key="EventKill" Color="#3F8A3C"/>
+  <SolidColorBrush x:Key="EventDown" Color="#C2453F"/>
+  <SolidColorBrush x:Key="EventMulti" Color="#5D6E92"/>
+  <SolidColorBrush x:Key="EventOther" Color="#6B7A73"/>
+  <SolidColorBrush x:Key="EventText" Color="#FFFFFF"/>
+  <SolidColorBrush x:Key="DangerBorder" Color="#D99A96"/>
 </ResourceDictionary>

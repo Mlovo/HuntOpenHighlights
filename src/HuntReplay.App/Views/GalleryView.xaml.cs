@@ -41,6 +41,18 @@ public partial class GalleryView : UserControl
     private double trimStart;
     private double trimEnd;
     private const double MinTrimDuration = 0.5;
+    private const double MinPlayerWidth = 560; // The trim toolbar wraps its end controls below this.
+    private const double SplitterWidth = 16;
+    private const double LibraryPanelWidth = 420; // A list card with its badge, metadata, star and menu on one line each.
+    private const double SideBySideMinWidth = MinPlayerWidth + SplitterWidth + LibraryPanelWidth;
+    private const double MinTileWidth = 180;
+    private bool? sideBySide;
+    // Side by side the split follows the window (see FitSideColumns) until the splitter is dragged; a dragged split is kept across stacked spells.
+    private bool userSplit;
+    private GridLength playerShare = new(1, GridUnitType.Star), libraryShare = new(LibraryPanelWidth);
+    private bool gridView;
+    private bool openedLatest; // The newest clip is put in the player on the first visit only.
+    private Window? fullscreen;
     private CancellationTokenSource? exportCts;
 
     // Async Seek Infrastructure for Smooth Scrubbing
@@ -54,7 +66,16 @@ public partial class GalleryView : UserControl
         InitializeComponent();
         timer.Tick += OnTimerTick;
         ClipList.SizeChanged += OnClipListSizeChanged;
-        Unloaded += (_, _) => Close();
+        SizeChanged += (_, e) =>
+        {
+            ApplyLayout(e.NewSize.Width >= SideBySideMinWidth);
+            // Neither the splitter nor a narrower window may squeeze the player below what the trim toolbar needs.
+            LibraryColumn.MaxWidth = Math.Max(LibraryPanelWidth, e.NewSize.Width - MinPlayerWidth - SplitterWidth);
+            SelectionHints.Visibility = e.NewSize.Width >= 1120 ? Visibility.Visible : Visibility.Collapsed;
+        };
+        BodyGrid.SizeChanged += (_, _) => FitPlayerScreen();
+        PlayerCard.SizeChanged += (_, _) => FitPlayerScreen();
+        Unloaded += (_, _) => { Close(); fullscreen?.Close(); };
         LocalizationService.Instance.PropertyChanged += (_, _) => UpdateLocalizedLabels();
         UpdateLocalizedLabels();
     }
@@ -165,6 +186,8 @@ public partial class GalleryView : UserControl
         PlayerImage.Source = null;
         Seek.IsEnabled = false;
         PlayButton.IsEnabled = false;
+        BackButton.IsEnabled = ForwardButton.IsEnabled = FullscreenButton.IsEnabled = false;
+        VideoFormatRun.Text = "";
         PlayButton.Content = "▶";
         updating = true;
         Seek.Value = 0;
@@ -191,19 +214,34 @@ public partial class GalleryView : UserControl
         }
         // Ctrl/Shift clicks build a selection for bulk actions; SelectionChanged decides what the player shows.
         if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0) return;
-        // The tile checkbox does the same as a Ctrl-click; the card buttons handle their own clicks.
+        // The card checkbox does the same as a Ctrl-click; the star and menu buttons handle their own clicks.
         for (var d = e.OriginalSource as DependencyObject; d is Visual && d != item; d = VisualTreeHelper.GetParent(d))
             if (d is ButtonBase) return;
         if (DataContext is not MainViewModel model) return;
         model.PreviewClip = clip;
         ShowPreview(); // Also reopens a clip whose player was closed, when PreviewClip did not change.
-        // In selection mode a click only previews; the circle, Ctrl and Shift change the selection.
-        if (ClipList.SelectedItems.Count > 1) { item.Focus(); e.Handled = true; }
+        // A click only opens the clip; the selection for bulk actions changes through the box, Ctrl and Shift.
+        item.Focus();
+        e.Handled = true;
+    }
+
+    // A right-click on a clip outside the selection leaves the selection alone; the menu then acts on that clip.
+    private void OnClipItemRightClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListBoxItem { IsSelected: false } item) { item.Focus(); e.Handled = true; }
+    }
+
+    private void ClipListContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        var item = (e.OriginalSource as DependencyObject) is { } source ? ItemsControl.ContainerFromElement(ClipList, source) as ListBoxItem : null;
+        item ??= Keyboard.FocusedElement as ListBoxItem; // Shift+F10 and the menu key.
+        ClipMenu.Tag = item is { IsSelected: false, DataContext: ClipViewModel clip } ? clip : null;
     }
 
     private void ModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.PreviewClip)) ShowPreview();
+        else if (e.PropertyName == nameof(MainViewModel.HasClips)) OpenLatestOnce(); // Clips can arrive after the page is shown.
     }
 
     // Opens MainViewModel.PreviewClip in the player unless it is already there.
@@ -217,14 +255,22 @@ public partial class GalleryView : UserControl
         LoadVideo(currentPath);
     }
 
+    // The first visit opens the newest clip (paused) instead of an empty player.
+    private void OpenLatestOnce()
+    {
+        if (openedLatest || !IsVisible || DataContext is not MainViewModel model || !model.HasClips) return;
+        openedLatest = true;
+        model.PreviewClip ??= ClipList.Items.OfType<ClipViewModel>().FirstOrDefault() ?? model.Clips[0];
+    }
+
     private void ClearSelectionClick(object sender, RoutedEventArgs e) => ClipList.UnselectAll();
 
     private void CardMoreClick(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.DataContext is not ClipViewModel clip) return;
-        // Like a right-click: a tile already in the selection keeps it, so the menu acts on all of it.
-        if (!ClipList.SelectedItems.Contains(clip)) ClipList.SelectedItem = clip;
-        var menu = ClipList.ContextMenu;
+        // Like a right-click: on a clip in the selection the menu acts on all of it, on any other clip on that clip alone.
+        var menu = ClipMenu;
+        menu.Tag = ClipList.SelectedItems.Contains(clip) ? null : clip;
         menu.DataContext = DataContext; // Opened from the card, it would otherwise inherit the clip as its DataContext.
         // Placement stays at the mouse point, the default a later right-click relies on.
         menu.PlacementTarget = button;
@@ -244,7 +290,24 @@ public partial class GalleryView : UserControl
     private void ClipListKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape && ClipList.SelectedItems.Count > 0) { ClipList.UnselectAll(); e.Handled = true; return; }
-        if (e.Key != Key.Enter || DataContext is not MainViewModel model) return;
+        if (DataContext is not MainViewModel model) return;
+        // Plain arrows open the next clip without touching the selection; Shift+arrows still extend it.
+        if (Keyboard.Modifiers == ModifierKeys.None && e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
+        {
+            var columns = gridView ? Math.Max(1, FindVisualChild<UniformGrid>(ClipList)?.Columns ?? 1) : 1;
+            var step = e.Key switch { Key.Up => -columns, Key.Down => columns, Key.Left => gridView ? -1 : 0, _ => gridView ? 1 : 0 };
+            var from = (Keyboard.FocusedElement as ListBoxItem)?.DataContext ?? model.PreviewClip;
+            var index = from is null ? 0 : ClipList.Items.IndexOf(from) + step;
+            if (step != 0 && index >= 0 && index < ClipList.Items.Count && ClipList.Items[index] is ClipViewModel next)
+            {
+                ClipList.ScrollIntoView(next);
+                model.PreviewClip = next;
+                (ClipList.ItemContainerGenerator.ContainerFromItem(next) as ListBoxItem)?.Focus();
+            }
+            e.Handled = step != 0;
+            return;
+        }
+        if (e.Key != Key.Enter) return;
         if ((Keyboard.FocusedElement as ListBoxItem)?.DataContext is ClipViewModel focused && focused != model.PreviewClip)
         {
             model.PreviewClip = focused;
@@ -257,9 +320,8 @@ public partial class GalleryView : UserControl
     private void SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (DataContext is not MainViewModel model) return;
+        // The selection is for bulk actions only; the player keeps whatever it shows.
         model.SelectedClips = ClipList.SelectedItems.Cast<ClipViewModel>().ToArray();
-        // A single selection is what the player shows; growing or clearing a selection leaves the preview alone.
-        if (ClipList.SelectedItems.Count == 1 && ClipList.SelectedItem is ClipViewModel clip) model.PreviewClip = clip;
     }
 
     private void LoadVideo(string path)
@@ -292,6 +354,9 @@ public partial class GalleryView : UserControl
 
             PlayerHint.Visibility = Visibility.Collapsed;
             PlayButton.IsEnabled = true;
+            BackButton.IsEnabled = ForwardButton.IsEnabled = FullscreenButton.IsEnabled = true;
+            VideoFormatRun.Text = $"  •  {w}×{h}  •  {Path.GetExtension(path).TrimStart('.').ToUpperInvariant()}";
+            FitPlayerScreen();
             Seek.IsEnabled = naturalDuration > 0;
             if (naturalDuration > 0) Seek.Maximum = naturalDuration;
             PositionText.Text = $"00:00 / {TimeSpan.FromSeconds(naturalDuration):mm\\:ss}";
@@ -556,10 +621,12 @@ public partial class GalleryView : UserControl
     {
         if (e.NewValue is false)
         {
+            fullscreen?.Close();
             Close();
         }
         else if (e.NewValue is true)
         {
+            OpenLatestOnce();
             if (playerHandle == IntPtr.Zero) ShowPreview();
         }
     }
@@ -619,22 +686,168 @@ public partial class GalleryView : UserControl
     }
 
     // The clip ListBox's own ScrollViewer swallows the wheel even with scrolling disabled; hand it to the page.
+    // Side by side, the list scrolls itself.
     private void ClipListMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (sideBySide == true) return;
         e.Handled = true;
         PageScroll.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = MouseWheelEvent, Source = sender });
     }
 
-    private void OnClipListSizeChanged(object sender, SizeChangedEventArgs e)
+    // Wide enough for the player beside a library column: the clips scroll on their own so the player stays in view.
+    // Narrower, the page stacks the player above the clips and scrolls as a whole.
+    private void ApplyLayout(bool side)
     {
-        double availableWidth = e.NewSize.Width;
-        if (availableWidth <= 0) return;
+        if (sideBySide == side) return;
+        if (!side && sideBySide == true) (playerShare, libraryShare) = (PlayerColumn.Width, LibraryColumn.Width);
+        sideBySide = side;
+        LibraryColumn.MinWidth = side ? LibraryPanelWidth : 0;
+        PlayerColumn.MinWidth = side ? MinPlayerWidth : 0;
+        PlayerColumn.Width = side ? playerShare : new GridLength(1, GridUnitType.Star);
+        LibraryColumn.Width = side ? libraryShare : new GridLength(0);
+        SplitterColumn.Width = new GridLength(side ? SplitterWidth : 0);
+        LibrarySplitter.Visibility = side ? Visibility.Visible : Visibility.Collapsed;
+        BodyTopRow.Height = side ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        Grid.SetColumnSpan(PlayerCard, side ? 1 : 3);
+        Grid.SetRow(LibraryPanel, side ? 0 : 1);
+        Grid.SetColumn(LibraryPanel, side ? 2 : 0);
+        Grid.SetColumnSpan(LibraryPanel, side ? 1 : 3);
+        PlayerCard.Margin = side ? new Thickness(0) : new Thickness(0, 0, 0, 20);
+        // Side by side the card runs the full column height and the screen takes what the bars leave; stacked it is sized by width.
+        PlayerCard.VerticalAlignment = side ? VerticalAlignment.Stretch : VerticalAlignment.Top;
+        PlayerScreenRow.Height = side ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        if (side) PlayerScreen.Height = double.NaN;
+        // The narrower player has no room for both trim boundaries on one line, so the end controls drop below the start ones, still on the right like the end handle.
+        Grid.SetRow(TrimEndControls, side ? 1 : 0);
+        Grid.SetColumn(TrimEndControls, side ? 0 : 2);
+        Grid.SetColumnSpan(TrimEndControls, side ? 3 : 1);
+        TrimEndControls.HorizontalAlignment = side ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+        TrimEndControls.Margin = side ? new Thickness(0, 8, 0, 0) : new Thickness(0);
+        PageScroll.VerticalScrollBarVisibility = side ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
+        BodyGrid.Margin = new Thickness(0, 0, side ? 0 : 8, 0); // The gutter only makes room for the page scrollbar.
+        ScrollViewer.SetVerticalScrollBarVisibility(ClipList, side ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled);
+        // Stacked, the list has no viewport of its own; a virtualizing panel would then measure to nothing.
+        ScrollViewer.SetCanContentScroll(ClipList, side);
+        FitPlayerScreen();
+    }
 
-        // Visual balance: target min tile width ~240px with 14px horizontal spacing
-        const double gap = 14.0;
-        const double minTileWidth = 240.0;
+    private double VideoAspect => videoWidth > 0 && videoHeight > 0 ? (double)videoHeight / videoWidth : 9.0 / 16;
 
-        int cols = Math.Max(1, (int)Math.Floor((availableWidth + gap) / (minTileWidth + gap)));
+    // Stacked, the screen takes the video's shape at the page width. Side by side, FitSideColumns sizes it.
+    private void FitPlayerScreen()
+    {
+        if (sideBySide == true) { FitSideColumns(); return; }
+        if (sideBySide is null || PlayerScreen.ActualWidth <= 0) return;
+        double height = Math.Max(160, Math.Floor(Math.Min(PlayerScreen.ActualWidth * VideoAspect, 540)));
+        if (double.IsNaN(PlayerScreen.Height) || Math.Abs(PlayerScreen.Height - height) >= 1) PlayerScreen.Height = height;
+    }
+
+    // Gives the player the width at which the video fills the column height, so no empty band is left under it.
+    // The clip list keeps the rest, never less than its minimum or more than 45 % of the row; past those limits the video letterboxes.
+    private void FitSideColumns()
+    {
+        if (userSplit || BodyGrid.ActualWidth <= 0 || PlayerScreen.ActualHeight <= 0) return;
+        double total = BodyGrid.ActualWidth - SplitterWidth;
+        double screenHeight = BodyGrid.ActualHeight - (PlayerCard.ActualHeight - PlayerScreen.ActualHeight);
+        double player = Math.Max(screenHeight / VideoAspect, total * 0.55);
+        double library = Math.Floor(Math.Max(LibraryPanelWidth, total - Math.Max(player, MinPlayerWidth)));
+        if (LibraryColumn.Width.IsAbsolute && Math.Abs(LibraryColumn.Width.Value - library) < 1 && PlayerColumn.Width.IsStar) return;
+        PlayerColumn.Width = new GridLength(1, GridUnitType.Star);
+        LibraryColumn.Width = new GridLength(library);
+    }
+
+    private void SplitterDragCompleted(object sender, DragCompletedEventArgs e) => userSplit = true;
+
+    private void ViewModeChecked(object sender, RoutedEventArgs e)
+    {
+        if (ClipList is null) return; // Raised while the view is still being built.
+        gridView = GridViewToggle.IsChecked == true;
+        ClipList.ItemTemplate = (DataTemplate)Resources[gridView ? "GridTile" : "ListCard"];
+        ClipList.ItemsPanel = (ItemsPanelTemplate)Resources[gridView ? "GridPanel" : "ListPanel"];
+        // Tiles sit apart on the grid; list cards stack with a hairline gap.
+        ClipList.ItemContainerStyle = new Style(typeof(ListBoxItem), ClipList.ItemContainerStyle.BasedOn ?? ClipList.ItemContainerStyle);
+        if (gridView) ClipList.ItemContainerStyle.Setters.Add(new Setter(PaddingProperty, new Thickness(0)));
+        if (gridView) ClipList.ItemContainerStyle.Setters.Add(new Setter(MarginProperty, new Thickness(3)));
+        Dispatcher.BeginInvoke(UpdateTileColumns, DispatcherPriority.Loaded);
+    }
+
+    private void PlayerMoreClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button) return;
+        PlayerMenu.DataContext = DataContext; // The button sits in the clip's details, so it would otherwise get the clip.
+        PlayerMenu.PlacementTarget = button;
+        PlayerMenu.Placement = PlacementMode.Bottom;
+        PlayerMenu.IsOpen = true;
+    }
+
+    private void PlaySelectedClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel model || model.SelectedClips.Count == 0) return;
+        model.PreviewClip = model.SelectedClips[0];
+        ShowPreview();
+        if (!playing && playerHandle != IntPtr.Zero) PlayPause(this, e);
+    }
+
+    // Explorer opens on the folder with the first selected clip highlighted.
+    private void RevealSelectedClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel model && model.SelectedClips.Count > 0) model.RevealCommand.Execute(model.SelectedClips[0]);
+    }
+
+    private void BackClick(object sender, RoutedEventArgs e) => SkipBy(-10);
+    private void ForwardClick(object sender, RoutedEventArgs e) => SkipBy(10);
+
+    private void SkipBy(double seconds)
+    {
+        if (playerHandle == IntPtr.Zero || naturalDuration <= 0 || isTrimMode) return;
+        double target = Math.Clamp(Seek.Value + seconds, 0, naturalDuration);
+        Seek.Value = target; // SeekChanged schedules the seek.
+        PositionText.Text = $"{TimeSpan.FromSeconds(target):mm\\:ss} / {TimeSpan.FromSeconds(naturalDuration):mm\\:ss}";
+    }
+
+    private void FullscreenClick(object sender, RoutedEventArgs e) => ToggleFullscreen();
+
+    // A borderless window over the whole monitor showing the same live frame; Esc, F or a double-click leave it.
+    private void ToggleFullscreen()
+    {
+        if (fullscreen is not null) { fullscreen.Close(); return; }
+        if (playerHandle == IntPtr.Zero) return;
+        var image = new Image { Stretch = Stretch.Uniform };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.Linear);
+        image.SetBinding(Image.SourceProperty, new System.Windows.Data.Binding(nameof(Image.Source)) { Source = PlayerImage });
+        var owner = Window.GetWindow(this);
+        var window = new Window
+        {
+            Owner = owner, Title = owner?.Title ?? "", Content = image, Background = Brushes.Black, Cursor = Cursors.Hand,
+            WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, Width = 640, Height = 360
+        };
+        window.Loaded += (_, _) => window.WindowState = WindowState.Maximized; // Maximized after placement, so on the owner's monitor.
+        window.MouseLeftButtonUp += (_, _) => PlayPause(this, new RoutedEventArgs());
+        window.MouseDoubleClick += (_, _) => window.Close();
+        window.KeyDown += (_, e) =>
+        {
+            switch (e.Key)
+            {
+                case Key.Escape or Key.F: window.Close(); break;
+                case Key.Space: PlayPause(this, new RoutedEventArgs()); break;
+                case Key.Left: SkipBy(-10); break;
+                case Key.Right: SkipBy(10); break;
+            }
+        };
+        window.Closed += (_, _) => { fullscreen = null; owner?.Activate(); };
+        fullscreen = window;
+        window.Show();
+    }
+
+    private void OnClipListSizeChanged(object sender, SizeChangedEventArgs e) => UpdateTileColumns();
+
+    private void UpdateTileColumns()
+    {
+        double availableWidth = ClipList.ActualWidth - 12; // Less the list scrollbar.
+        if (availableWidth <= 0 || !gridView) return;
+        const double gap = 8.0;
+        int cols = Math.Max(1, (int)Math.Floor((availableWidth + gap) / (MinTileWidth + gap)));
 
         var uniformGrid = FindVisualChild<UniformGrid>(ClipList);
         if (uniformGrid is not null && uniformGrid.Columns != cols)
@@ -1083,7 +1296,7 @@ public partial class GalleryView : UserControl
                 if (mainVm is not null)
                 {
                     await mainVm.RefreshClipsAsync();
-                    mainVm.SelectedClip = mainVm.Clips.FirstOrDefault(c => c.Clip.Metadata.Id == registeredClip.Metadata.Id);
+                    mainVm.PreviewClip = mainVm.Clips.FirstOrDefault(c => c.Clip.Metadata.Id == registeredClip.Metadata.Id) ?? mainVm.PreviewClip;
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -1131,8 +1344,12 @@ public partial class GalleryView : UserControl
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
-        if (!isTrimMode) return;
         if (SearchBox.IsKeyboardFocused) return;
+        if (!isTrimMode)
+        {
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.None && playerHandle != IntPtr.Zero) { ToggleFullscreen(); e.Handled = true; }
+            return;
+        }
 
         switch (e.Key)
         {

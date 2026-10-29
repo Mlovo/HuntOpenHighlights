@@ -152,7 +152,35 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         get => settingsEdit;
         private set { if (SetProperty(ref settingsEdit, value)) RefreshDeviceSelections(); }
     }
-    public string Search { get => search; set { if (SetProperty(ref search, value)) FilteredClips.Refresh(); } }
+    public string Search { get => search; set { if (SetProperty(ref search, value)) RefreshFilter(); } }
+    // Gallery filters: the favorites chip and the event chips (All, Kill, Down, Multi).
+    private bool favoritesOnly;
+    public bool FavoritesOnly { get => favoritesOnly; set { if (SetProperty(ref favoritesOnly, value)) { OnPropertyChanged(nameof(ShowFavoritesFilter)); RefreshFilter(); } } }
+    public int FavoriteCount => Clips.Count(c => c.IsFavorite);
+    // The chip appears once a clip is starred, and stays while it is on so the filter can always be switched off.
+    public bool ShowFavoritesFilter => FavoriteCount > 0 || FavoritesOnly;
+    private string eventFilter = "All";
+    public string EventFilter { get => eventFilter; set { if (SetProperty(ref eventFilter, value)) RefreshFilter(); } }
+    public int KillCount => Clips.Count(c => c.EventKind == "Kill");
+    public int DownCount => Clips.Count(c => c.EventKind == "Down");
+    public int MultiCount => Clips.Count(c => c.EventKind == "Multi");
+    // The library has clips but none pass the filters; the gallery then says why instead of showing an empty list.
+    public bool IsFilteredEmpty => HasClips && FilteredClips.IsEmpty;
+    private bool NoFavoritesYet => FavoritesOnly && !Clips.Any(c => c.IsFavorite);
+    public string FilteredEmptyTitle => Loc[NoFavoritesYet ? "Gallery.NoFavorites" : "Gallery.NoMatches"];
+    public string FilteredEmptyDesc => Loc[NoFavoritesYet ? "Gallery.NoFavoritesDesc" : "Gallery.NoMatchesDesc"];
+    private void RefreshFilter()
+    {
+        FilteredClips.Refresh();
+        OnPropertyChanged(nameof(IsFilteredEmpty)); OnPropertyChanged(nameof(FilteredEmptyTitle)); OnPropertyChanged(nameof(FilteredEmptyDesc));
+    }
+    // Everything derived from the clip list, raised after it changes.
+    private void NotifyLibrary()
+    {
+        foreach (var name in new[] { nameof(RecentClips), nameof(HasClips), nameof(ClipCount), nameof(LibrarySummary), nameof(KillCount), nameof(DownCount), nameof(MultiCount), nameof(FavoriteCount), nameof(ShowFavoritesFilter), nameof(SelectionSummary) })
+            OnPropertyChanged(name);
+        RefreshFilter();
+    }
     public ClipViewModel? SelectedClip
     {
         get => selectedClip;
@@ -163,8 +191,10 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<ClipViewModel> SelectedClips
     {
         get => selectedClips;
-        set { selectedClips = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsSelectionMode)); NotifyCommands(DeleteCommand, RenameCommand, TrimCommand, RevealCommand, OpenInPlayerCommand); }
+        set { selectedClips = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsSelectionMode)); OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(SelectionSummary)); NotifyCommands(DeleteCommand, RenameCommand, TrimCommand, RevealCommand, OpenInPlayerCommand); }
     }
+    public bool HasSelection => SelectedClips.Count > 0;
+    public string SelectionSummary => Loc.Format("Gallery.SelectionSummary", SelectedClips.Count, SelectedClips.Sum(c => c.Clip.Metadata.Bytes) / 1024d / 1024);
     private bool OneClipSelected => SelectedClip is not null && SelectedClips.Count <= 1;
     // With several clips selected, a click on a card previews it without changing the selection.
     public bool IsSelectionMode => SelectedClips.Count > 1;
@@ -181,10 +211,12 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             if (value is not null) value.IsPreviewing = true;
             recorder.ProtectPlayingClip(value?.Clip.Metadata.Id);
             OnPropertyChanged(nameof(SelectedEventLabel));
+            NotifyCommands(DeleteCommand, RenameCommand, TrimCommand, RevealCommand, OpenInPlayerCommand, ToggleFavoriteCommand);
         }
     }
-    // The player bar passes the clip it shows; the card menu and shortcuts pass nothing and act on the selection.
-    private ClipViewModel? Target(object? clip) => clip as ClipViewModel ?? (OneClipSelected ? SelectedClip : null);
+    // The player bar passes the clip it shows; the card menu and shortcuts pass nothing and act on the selection,
+    // or on the clip in the player when nothing is selected.
+    private ClipViewModel? Target(object? clip) => clip as ClipViewModel ?? (OneClipSelected ? SelectedClip : SelectedClips.Count == 0 ? PreviewClip : null);
     public bool IsBufferActive => status.Running && status.Buffer.Seconds > 0;
     public bool IsGameConnected => pipe.Games.Count > 0;
     public string GameStatus => IsGameConnected ? string.Format(Loc["Dash.GameConnected"], string.Join(", ", pipe.Games.Select(g => g.Game).Distinct())) :
@@ -233,6 +265,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IRelayCommand TrimCommand { get; }
     public IRelayCommand RevealCommand { get; }
     public IRelayCommand OpenInPlayerCommand { get; }
+    public IRelayCommand ToggleFavoriteCommand { get; }
     public IRelayCommand DiagnoseCommand { get; }
     public IRelayCommand SaveReportCommand { get; }
     public IRelayCommand InstallCommand { get; }
@@ -352,25 +385,27 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
             () => SettingsEdit.Video.GpuDevice, value => SettingsEdit.Video.GpuDevice = value);
         FilteredClips = CollectionViewSource.GetDefaultView(Clips);
         FilteredClips.Filter = value => value is ClipViewModel c &&
-            (string.IsNullOrWhiteSpace(Search) || c.FileName.Contains(Search, StringComparison.OrdinalIgnoreCase) || c.EventLabel.Contains(Search, StringComparison.OrdinalIgnoreCase));
+            (!FavoritesOnly || c.IsFavorite) && (EventFilter == "All" || c.EventKind == EventFilter) &&
+            (string.IsNullOrWhiteSpace(Search) || c.FileName.Contains(Search, StringComparison.OrdinalIgnoreCase) || c.EventLabel.Contains(Search, StringComparison.OrdinalIgnoreCase) || c.Meta.Contains(Search, StringComparison.OrdinalIgnoreCase));
         ToggleBufferCommand = Async(ToggleAsync, () => !Busy);
         SaveCommand = Async(recorder.SaveManualAsync, () => IsBufferActive && !Busy);
         ApplySettingsCommand = Async(ApplyAsync, () => !Busy);
         BrowseCommand = new RelayCommand(() => Safe(Browse));
         OpenFolderCommand = new RelayCommand(() => Safe(() => DesktopIntegration.OpenFolder(recorder.Settings.Storage.Directory)));
         RefreshCommand = Async(RefreshClipsAsync);
-        DeleteCommand = new RelayCommand<object?>(clip => Safe(() => DeleteClips(clip is ClipViewModel one ? [one] : SelectedClips.Count > 0 ? SelectedClips : SelectedClip is { } single ? [single] : [])),
-            clip => clip is ClipViewModel || SelectedClip is not null);
+        DeleteCommand = new RelayCommand<object?>(clip => Safe(() => DeleteClips(clip is ClipViewModel one ? [one] : SelectedClips.Count > 0 ? SelectedClips : Target(null) is { } single ? [single] : [])),
+            clip => clip is ClipViewModel || SelectedClips.Count > 0 || Target(null) is not null);
         RenameCommand = new RelayCommand<object?>(clip => Safe(() => RenameClip(Target(clip)!)), clip => Target(clip) is not null);
         TrimCommand = new RelayCommand<object?>(clip => TrimRequested?.Invoke(Target(clip)!), clip => Target(clip) is not null);
         RevealCommand = new RelayCommand<object?>(clip => Safe(() => DesktopIntegration.RevealFile(Target(clip)!.Clip.FullPath)), clip => Target(clip) is not null);
         OpenInPlayerCommand = new RelayCommand<object?>(clip => Safe(() => DesktopIntegration.OpenWithDefaultPlayer(Target(clip)!.Clip.FullPath)), clip => Target(clip) is not null);
+        ToggleFavoriteCommand = new RelayCommand<object?>(clip => Safe(() => ToggleFavorite((clip as ClipViewModel ?? PreviewClip)!)), clip => clip is ClipViewModel || PreviewClip is not null);
         DiagnoseCommand = Async(DiagnoseAsync, () => !Busy);
         SaveReportCommand = new RelayCommand(() => Safe(SaveReport));
         InstallCommand = Async(InstallAsync, () => !Busy);
         UninstallCommand = Async(UninstallAsync, () => !Busy);
         OpenLogsCommand = new RelayCommand(() => Safe(() => DesktopIntegration.OpenFolder(log.DirectoryPath)));
-        SelectRecentCommand = new RelayCommand<object?>(value => { if (value is ClipViewModel clip) { Page = "Gallery"; SelectedClip = clip; } });
+        SelectRecentCommand = new RelayCommand<object?>(value => { if (value is ClipViewModel clip) { Page = "Gallery"; PreviewClip = clip; } });
         CheckUpdateCommand = Async(CheckUpdateManualAsync);
         InstallUpdateCommand = new RelayCommand(() => { if (updateDownload is { } download) download.Cancel(); else _ = InstallUpdateAsync(); });
         ToggleLanguageCommand = new RelayCommand(() => Safe(ToggleLanguage));
@@ -654,7 +689,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         Clips.Clear(); foreach (var clip in result) Clips.Add(clip);
         SelectedClip = Clips.FirstOrDefault(c => c.Clip.Metadata.Id == selectedId);
         PreviewClip = Clips.FirstOrDefault(c => c.Clip.Metadata.Id == previewId);
-        OnPropertyChanged(nameof(RecentClips)); OnPropertyChanged(nameof(HasClips)); OnPropertyChanged(nameof(ClipCount)); OnPropertyChanged(nameof(LibrarySummary));
+        NotifyLibrary();
     }
     private void Browse()
     {
@@ -673,8 +708,20 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         if (PreviewClip is { } shown && !Clips.Contains(shown)) PreviewClip = null;
         foreach (var error in failed.Values) Error(error);
         if (failed.Count > 1) Message = Loc.Format("Status.ClipsNotDeleted", failed.Count, clips.Count);
-        OnPropertyChanged(nameof(RecentClips)); OnPropertyChanged(nameof(HasClips)); OnPropertyChanged(nameof(ClipCount)); OnPropertyChanged(nameof(LibrarySummary));
+        NotifyLibrary();
     }
+    private void ToggleFavorite(ClipViewModel clip)
+    {
+        try { clip.Clip = Library().SetFavorite(clip.Clip, !clip.IsFavorite); }
+        catch (IOException) when (!File.Exists(clip.Clip.FullPath))
+        {
+            _ = RefreshClipsAsync(); // Deleted outside Studio: drop it from the list instead of starring a clip that is gone.
+            throw;
+        }
+        OnPropertyChanged(nameof(FavoriteCount)); OnPropertyChanged(nameof(ShowFavoritesFilter));
+        RefreshFilter();
+    }
+
     private void RenameClip(ClipViewModel clip)
     {
         var dialog = new InputDialog(Loc["Dialog.RenameClip"], clip.FileName) { Owner = Application.Current.MainWindow };
@@ -682,7 +729,7 @@ internal sealed class MainViewModel : ObservableObject, IAsyncDisposable
         ClosePlayer?.Invoke();
         var renamed = Library().Rename(clip.Clip, dialog.Value);
         var index = Clips.IndexOf(clip); var model = new ClipViewModel(renamed);
-        Clips[index] = model; if (SelectedClip == clip) SelectedClip = model; if (PreviewClip == clip) PreviewClip = model; OnPropertyChanged(nameof(RecentClips));
+        Clips[index] = model; if (SelectedClip == clip) SelectedClip = model; if (PreviewClip == clip) PreviewClip = model; NotifyLibrary();
     }
     private async Task DiagnoseAsync()
     {

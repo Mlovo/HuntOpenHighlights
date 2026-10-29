@@ -12,7 +12,18 @@ internal sealed class ClipViewModel : ObservableObject
     private bool isPreviewing;
     // Set by MainViewModel.PreviewClip so the card can mark the clip shown in the player.
     public bool IsPreviewing { get => isPreviewing; set => SetProperty(ref isPreviewing, value); }
-    public LibraryClip Clip { get; }
+    private LibraryClip clip;
+    // Replaced in place when only the record changes (a star), so the list keeps its selection and scroll position.
+    public LibraryClip Clip { get => clip; set { if (SetProperty(ref clip, value)) OnPropertyChanged(nameof(IsFavorite)); } }
+    public bool IsFavorite => Clip.Metadata.Favorite;
+    // Picks the badge colour: kills green, downs red, multi-kills blue, manual saves neutral.
+    public string EventKind => Clip.Metadata.EventTag switch
+    {
+        var t when t.StartsWith("MULTI_KILL", StringComparison.Ordinal) => "Multi",
+        "HUNTER_KILLED" => "Kill",
+        "PLAYER_DOWNED" => "Down",
+        _ => "Other"
+    };
     public string FileName => Clip.Metadata.FileName;
     public string EventLabel
     {
@@ -37,16 +48,20 @@ internal sealed class ClipViewModel : ObservableObject
     public string Size => LocalizationService.Instance.Format("Unit.MegabytesValue", Clip.Metadata.Bytes / 1024d / 1024);
     public string Date => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM · HH:mm", HuntReplay.Core.Localization.Text.Culture);
     public string Detail => $"{Date}   /   {Size}";
+    private string LongDate => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM yyyy  •  HH:mm", HuntReplay.Core.Localization.Text.Culture);
+    public string Meta => $"{LongDate}  •  {Duration}  •  {Size}";
     // Generated names carry the {time} stamp (HH-mm-ss-fff) and read better as their date; a renamed clip keeps its own name.
     private static readonly Regex GeneratedName = new(@"\d{2}-\d{2}-\d{2}-\d{3}", RegexOptions.Compiled);
     private bool HasGeneratedName => GeneratedName.IsMatch(FileName);
     public string Title => HasGeneratedName ? Date : Path.GetFileNameWithoutExtension(FileName);
+    // Only a name the user gave the clip is worth a line on the list card; generated names repeat the date.
+    public string? CustomName => HasGeneratedName ? null : Path.GetFileNameWithoutExtension(FileName);
     public string Subtitle => HasGeneratedName ? Size : $"{Date} · {Size}";
     public ImageSource? Thumbnail { get; }
     // A thumbnail file is written once per clip Id, so one decoded by an earlier library refresh is reused as is.
     public ClipViewModel(LibraryClip clip, ImageSource? decoded = null)
     {
-        Clip = clip;
+        this.clip = clip;
         Thumbnail = decoded;
         if (decoded is not null) return;
         try
