@@ -19,7 +19,12 @@
           <RadioButton Style="{DynamicResource NavButton}" GroupName="Navigation" IsChecked="{Binding Page, Converter={StaticResource PageSelected}, ConverterParameter=Diagnostics}"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}" Margin="0,2,13,0"/><TextBlock Text="{Binding Loc[Nav.Diagnostics]}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/></StackPanel></RadioButton>
         </StackPanel>
         <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
-          <Button Content="{Binding Loc[Nav.OpenFolder]}" Style="{DynamicResource QuietButton}" Command="{Binding OpenFolderCommand}" HorizontalContentAlignment="Left"/>
+          <!-- Theme and language sit with the app chrome here; the clips folder opens from the gallery header. -->
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <Button Content="{Binding ThemeButtonLabel}" Command="{Binding ToggleThemeCommand}" Background="{DynamicResource SurfaceRaised}" BorderBrush="{DynamicResource Border}" Foreground="{DynamicResource Text}" MinHeight="34" Padding="8,5" ToolTip="{Binding Loc[Header.ThemeTooltip]}" Cursor="Hand"/>
+            <Button Grid.Column="2" Content="{Binding LanguageButtonLabel}" Command="{Binding ToggleLanguageCommand}" Background="{DynamicResource SurfaceRaised}" BorderBrush="{DynamicResource Border}" Foreground="{DynamicResource Text}" MinHeight="34" Padding="8,5" ToolTip="Переключить язык / Toggle language" Cursor="Hand"/>
+          </Grid>
           <Border Height="1" Background="{DynamicResource Border}" Margin="12,16"/>
           <Grid Margin="12,0"><TextBlock Text="{Binding AppVersion, StringFormat='STUDIO  /  {0}'}" FontSize="9" Foreground="{DynamicResource Muted}"/><TextBlock Text="LOCAL" FontSize="9" Foreground="{DynamicResource Accent}" HorizontalAlignment="Right"/></Grid>
         </StackPanel>
@@ -77,8 +82,6 @@
       <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="30,0">
         <Grid><StackPanel VerticalAlignment="Center"><TextBlock Text="FIELD RECORDER  /  HUNT: SHOWDOWN 1896" Style="{DynamicResource Eyebrow}" FontSize="9"/><TextBlock Text="{Binding PageTitle}" FontSize="19" FontWeight="SemiBold" Margin="0,5,0,0"/></StackPanel>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-            <Button Content="{Binding ThemeButtonLabel}" Command="{Binding ToggleThemeCommand}" Background="{DynamicResource SurfaceRaised}" BorderBrush="{DynamicResource Border}" Foreground="{DynamicResource Text}" MinHeight="28" Padding="10,5" Margin="0,0,10,0" ToolTip="{Binding Loc[Header.ThemeTooltip]}" Cursor="Hand"/>
-            <Button Content="{Binding LanguageButtonLabel}" Command="{Binding ToggleLanguageCommand}" Background="{DynamicResource SurfaceRaised}" BorderBrush="{DynamicResource Border}" Foreground="{DynamicResource Text}" MinHeight="28" Padding="10,5" Margin="0,0,10,0" ToolTip="Переключить язык / Toggle language" Cursor="Hand"/>
             <Button Content="{Binding UpdateButtonLabel}" Command="{Binding InstallUpdateCommand}" Visibility="{Binding HasUpdate, Converter={StaticResource BoolVisibility}}" Background="{DynamicResource AccentDark}" BorderBrush="{DynamicResource Accent}" Foreground="{DynamicResource Accent}" MinHeight="28" Padding="12,5" Margin="0,0,10,0" ToolTip="{Binding UpdateButtonTooltip}" Cursor="Hand"/>
             <Border BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="4" Padding="10,7" Margin="0,0,9,0"><TextBlock Text="{Binding PipeLabel}" FontSize="9" Foreground="{DynamicResource Muted}"/></Border>
             <Border Background="{DynamicResource AccentDark}" CornerRadius="4" Padding="10,7"><TextBlock Text="{Binding SetupLabel}" FontSize="9" Foreground="{DynamicResource Accent}"/></Border>
