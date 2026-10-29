@@ -2,6 +2,26 @@
 
 All notable changes to **HuntReplay Studio** are documented in this file.
 
+## [0.2.2] - 2026-10-29
+
+### Added
+- **Favorites**: star a clip on its card or in the player. Stars are kept across restarts and renames, and a Favorites chip appears in the gallery once something is starred.
+- **Filters**: chips for Kills, Downs and Multi-kills with counts; they combine with Favorites and the search.
+- **Grid or list**: the clip list can switch between compact cards and thumbnail tiles.
+- **Player**: skip back and forward 10 s, and full screen (F, Esc or a double-click to leave).
+- **Graphics card details** on the dashboard: API, driver version and video memory.
+
+### Changed
+- The gallery shows the player beside the clip list, sized so the video fills the height. In a narrow window the list moves below the player.
+- Clicking a clip only opens it in the player; the box on a card, Ctrl and Shift build the selection, so playing and selecting no longer get in each other's way. Arrow keys move through clips without selecting them.
+- The selection bar below the gallery shows the count and total size, with Play selected (for one clip) and Delete.
+- Clip cards show the event and the date and time; event badges are coloured (kills green, downs red, multi-kills blue).
+- The gallery opens the newest clip on the first visit instead of an empty player.
+- The dashboard banner has new artwork.
+- Theme and language buttons moved to the bottom of the sidebar; the sidebar's Open clips folder link and the LOCAL label are gone (the gallery header still opens the folder).
+
+---
+
 ## [0.2.1] - 2026-10-25
 
 ### Added
