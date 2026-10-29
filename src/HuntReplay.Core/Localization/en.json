@@ -296,7 +296,6 @@
   "Gallery.NoMatchesDesc": "Try another search or filter.",
   "Gallery.SelectionSummary": "{0} selected ({1:F1} MB)",
   "Gallery.PlaySelected": "Play selected",
-  "Gallery.OpenInFolder": "Open in folder",
   "Gallery.HintSelectAll": "Select all",
   "Gallery.HintRange": "Range",
   "Gallery.HintAdd": "Add to selection",

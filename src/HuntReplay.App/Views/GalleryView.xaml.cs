@@ -187,7 +187,7 @@ public partial class GalleryView : UserControl
         Seek.IsEnabled = false;
         PlayButton.IsEnabled = false;
         BackButton.IsEnabled = ForwardButton.IsEnabled = FullscreenButton.IsEnabled = false;
-        VideoFormatRun.Text = "";
+        PlayerMoreButton.IsEnabled = false;
         PlayButton.Content = "▶";
         updating = true;
         Seek.Value = 0;
@@ -355,7 +355,7 @@ public partial class GalleryView : UserControl
             PlayerHint.Visibility = Visibility.Collapsed;
             PlayButton.IsEnabled = true;
             BackButton.IsEnabled = ForwardButton.IsEnabled = FullscreenButton.IsEnabled = true;
-            VideoFormatRun.Text = $"  •  {w}×{h}  •  {Path.GetExtension(path).TrimStart('.').ToUpperInvariant()}";
+            PlayerMoreButton.IsEnabled = true;
             FitPlayerScreen();
             Seek.IsEnabled = naturalDuration > 0;
             if (naturalDuration > 0) Seek.Maximum = naturalDuration;
@@ -788,11 +788,6 @@ public partial class GalleryView : UserControl
         if (!playing && playerHandle != IntPtr.Zero) PlayPause(this, e);
     }
 
-    // Explorer opens on the folder with the first selected clip highlighted.
-    private void RevealSelectedClick(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainViewModel model && model.SelectedClips.Count > 0) model.RevealCommand.Execute(model.SelectedClips[0]);
-    }
 
     private void BackClick(object sender, RoutedEventArgs e) => SkipBy(-10);
     private void ForwardClick(object sender, RoutedEventArgs e) => SkipBy(10);

@@ -120,7 +120,7 @@
           <TextBlock Text="{Binding CustomName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,5,0,0" ToolTip="{Binding FileName}">
             <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding CustomName}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
           </TextBlock>
-          <TextBlock Text="{Binding Meta}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" MaxHeight="34" Margin="0,6,0,0" ToolTip="{Binding FileName}"/>
+          <TextBlock Text="{Binding When}" FontSize="12" Foreground="{DynamicResource Muted}" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}"/>
         </StackPanel>
         <Button Grid.Column="3" Style="{StaticResource FavoriteStar}" Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" Focusable="False"/>
         <Button Grid.Column="4" Style="{StaticResource GlyphButton}" Content="&#xE712;" Foreground="{DynamicResource Muted}" Focusable="False" Click="CardMoreClick" ToolTip="{Binding [Gallery.MoreActions], Source={x:Static services:LocalizationService.Instance}}" AutomationProperties.Name="{Binding [Gallery.MoreActions], Source={x:Static services:LocalizationService.Instance}}"/>
@@ -156,12 +156,9 @@
             </CheckBox.Style>
           </CheckBox>
         </Grid>
-        <Grid Margin="11,8,4,9">
+        <Grid Margin="11,4,4,4">
           <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-          <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}"/>
-            <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
-          </StackPanel>
+          <TextBlock Text="{Binding When}" FontSize="12" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}"/>
           <Button Grid.Column="1" Style="{StaticResource FavoriteStar}" Width="30" Height="30" Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" Focusable="False"/>
           <Button Grid.Column="2" Style="{StaticResource GlyphButton}" Width="30" Height="30" Content="&#xE712;" Foreground="{DynamicResource Muted}" Focusable="False" Click="CardMoreClick" ToolTip="{Binding [Gallery.MoreActions], Source={x:Static services:LocalizationService.Instance}}" AutomationProperties.Name="{Binding [Gallery.MoreActions], Source={x:Static services:LocalizationService.Instance}}"/>
         </Grid>
@@ -269,6 +266,8 @@
                       <ColumnDefinition Width="Auto"/>
                       <ColumnDefinition Width="Auto"/>
                       <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <Button x:Name="PlayButton" Style="{StaticResource IconButton}" Content="▶" Click="PlayPause" IsEnabled="False">
                       <Button.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" FontSize="16" FontWeight="Normal" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}"/></DataTemplate></Button.ContentTemplate>
@@ -298,13 +297,28 @@
 
                     <TextBlock x:Name="PositionText" Grid.Column="4" Text="00:00 / 00:00" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,6,0"/>
 
-                    <Button x:Name="TrimButton" ToolTip="{Binding Loc[Gallery.TrimTooltip]}" Grid.Column="5" Margin="8,0,0,0" Click="TrimButtonClick" IsEnabled="False" Padding="12,0" MinHeight="34">
+                    <!-- Stars the clip in the player, in step with its card. -->
+                    <Button Grid.Column="5" Style="{StaticResource FavoriteStar}" DataContext="{Binding PreviewClip}" Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Margin="4,0,0,0"/>
+                    <Button x:Name="TrimButton" ToolTip="{Binding Loc[Gallery.TrimTooltip]}" Grid.Column="6" Margin="8,0,0,0" Click="TrimButtonClick" IsEnabled="False" Padding="12,0" MinHeight="34">
                       <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7A8;" FontFamily="Segoe MDL2 Assets" FontSize="13" FontWeight="Normal" VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock x:Name="TrimButtonText" Text="{Binding Loc[Gallery.Trim]}" VerticalAlignment="Center"/>
                       </StackPanel>
                     </Button>
-                    <Button x:Name="FullscreenButton" Grid.Column="6" Style="{StaticResource GlyphButton}" Content="&#xE740;" Click="FullscreenClick" IsEnabled="False" Margin="6,0,0,0" ToolTip="{Binding Loc[Gallery.Fullscreen]}" AutomationProperties.Name="{Binding Loc[Gallery.Fullscreen]}"/>
+                    <Button x:Name="FullscreenButton" Grid.Column="7" Style="{StaticResource GlyphButton}" Content="&#xE740;" Click="FullscreenClick" IsEnabled="False" Margin="6,0,0,0" ToolTip="{Binding Loc[Gallery.Fullscreen]}" AutomationProperties.Name="{Binding Loc[Gallery.Fullscreen]}"/>
+                    <Button x:Name="PlayerMoreButton" Grid.Column="8" Style="{StaticResource GlyphButton}" Content="&#xE712;" Margin="2,0,0,0" Click="PlayerMoreClick" IsEnabled="False" ToolTip="{Binding [Gallery.MoreActions], Source={x:Static services:LocalizationService.Instance}}" AutomationProperties.Name="{Binding [Gallery.MoreActions], Source={x:Static services:LocalizationService.Instance}}">
+                  <Button.ContextMenu>
+                    <!-- Acts on the clip in the player; DataContext is set to the view model when it opens. -->
+                    <ContextMenu x:Name="PlayerMenu">
+                      <MenuItem Header="{Binding Loc[Gallery.TrimVideo]}" Command="{Binding TrimCommand}" CommandParameter="{Binding PreviewClip}"/>
+                      <MenuItem Header="{Binding Loc[Gallery.Rename]}" Command="{Binding RenameCommand}" CommandParameter="{Binding PreviewClip}"/>
+                      <MenuItem Header="{Binding Loc[Gallery.Reveal]}" Command="{Binding RevealCommand}" CommandParameter="{Binding PreviewClip}"/>
+                      <MenuItem Header="{Binding Loc[Gallery.OpenInPlayer]}" Command="{Binding OpenInPlayerCommand}" CommandParameter="{Binding PreviewClip}"/>
+                      <Separator/>
+                      <MenuItem Header="{Binding Loc[Gallery.Delete]}" Command="{Binding DeleteCommand}" CommandParameter="{Binding PreviewClip}" Foreground="{DynamicResource EventDown}"/>
+                    </ContextMenu>
+                  </Button.ContextMenu>
+                    </Button>
                   </Grid>
 
                   <!-- Inline Collapsible Trim Toolbar -->
@@ -417,38 +431,6 @@
                     </StackPanel>
                   </Border>
                 </StackPanel>
-              </Grid>
-            </Border>
-            <!-- Details of the clip in the player. Hidden, not collapsed, so loading a clip does not shift the layout. -->
-            <Border Grid.Row="2" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="16,12" CornerRadius="0,0,9,9">
-              <Grid x:Name="ClipDetails" DataContext="{Binding PreviewClip}">
-                <Grid.Style>
-                  <Style TargetType="Grid">
-                    <Style.Triggers><DataTrigger Binding="{Binding}" Value="{x:Null}"><Setter Property="Visibility" Value="Hidden"/></DataTrigger></Style.Triggers>
-                  </Style>
-                </Grid.Style>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center">
-                  <StackPanel Orientation="Horizontal">
-                    <Border Style="{StaticResource EventBadge}" Padding="10,4"><TextBlock Style="{StaticResource EventBadgeText}" FontSize="13"/></Border>
-                    <TextBlock Text="{Binding CustomName}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis"/>
-                  </StackPanel>
-                  <TextBlock Foreground="{DynamicResource Muted}" FontSize="12" Margin="0,8,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}"><Run Text="{Binding Meta, Mode=OneWay}"/><Run x:Name="VideoFormatRun"/></TextBlock>
-                </StackPanel>
-                <Button Grid.Column="1" Style="{StaticResource FavoriteStar}" Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" BorderBrush="{DynamicResource Border}" Width="38" Height="38" Margin="0,0,8,0"/>
-                <Button Grid.Column="2" Style="{StaticResource GlyphButton}" Content="&#xE712;" BorderBrush="{DynamicResource Border}" Width="38" Height="38" Click="PlayerMoreClick" ToolTip="{Binding [Gallery.MoreActions], Source={x:Static services:LocalizationService.Instance}}" AutomationProperties.Name="{Binding [Gallery.MoreActions], Source={x:Static services:LocalizationService.Instance}}">
-                  <Button.ContextMenu>
-                    <!-- Acts on the clip in the player; DataContext is set to the view model when it opens. -->
-                    <ContextMenu x:Name="PlayerMenu">
-                      <MenuItem Header="{Binding Loc[Gallery.TrimVideo]}" Command="{Binding TrimCommand}" CommandParameter="{Binding PreviewClip}"/>
-                      <MenuItem Header="{Binding Loc[Gallery.Rename]}" Command="{Binding RenameCommand}" CommandParameter="{Binding PreviewClip}"/>
-                      <MenuItem Header="{Binding Loc[Gallery.Reveal]}" Command="{Binding RevealCommand}" CommandParameter="{Binding PreviewClip}"/>
-                      <MenuItem Header="{Binding Loc[Gallery.OpenInPlayer]}" Command="{Binding OpenInPlayerCommand}" CommandParameter="{Binding PreviewClip}"/>
-                      <Separator/>
-                      <MenuItem Header="{Binding Loc[Gallery.Delete]}" Command="{Binding DeleteCommand}" CommandParameter="{Binding PreviewClip}" Foreground="{DynamicResource EventDown}"/>
-                    </ContextMenu>
-                  </Button.ContextMenu>
-                </Button>
               </Grid>
             </Border>
           </Grid>
@@ -590,9 +572,6 @@
           <TextBlock Text="{Binding SelectionSummary}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,18,0"/>
           <Button Click="PlaySelectedClick" Padding="14,0" MinHeight="36" Margin="0,0,8,0" Visibility="{Binding IsSelectionMode, Converter={StaticResource BoolVisibility}, ConverterParameter=Invert}">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontWeight="Normal" VerticalAlignment="Center" Margin="0,0,8,0"/><TextBlock Text="{Binding Loc[Gallery.PlaySelected]}" VerticalAlignment="Center"/></StackPanel>
-          </Button>
-          <Button Click="RevealSelectedClick" Padding="14,0" MinHeight="36" Margin="0,0,8,0">
-            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xED25;" FontFamily="Segoe MDL2 Assets" FontWeight="Normal" VerticalAlignment="Center" Margin="0,0,8,0"/><TextBlock Text="{Binding Loc[Gallery.OpenInFolder]}" VerticalAlignment="Center"/></StackPanel>
           </Button>
           <Button Command="{Binding DeleteCommand}" ToolTip="Del" Padding="14,0" MinHeight="36" Foreground="{DynamicResource EventDown}" BorderBrush="{DynamicResource DangerBorder}">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontWeight="Normal" VerticalAlignment="Center" Margin="0,0,8,0"/><TextBlock Text="{Binding Loc[Gallery.Delete]}" VerticalAlignment="Center"/></StackPanel>

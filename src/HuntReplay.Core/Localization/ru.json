@@ -296,7 +296,6 @@
   "Gallery.NoMatchesDesc": "Попробуйте другой запрос или фильтр.",
   "Gallery.SelectionSummary": "Выбрано: {0} ({1:F1} МБ)",
   "Gallery.PlaySelected": "Воспроизвести",
-  "Gallery.OpenInFolder": "Показать в папке",
   "Gallery.HintSelectAll": "Выбрать все",
   "Gallery.HintRange": "Диапазон",
   "Gallery.HintAdd": "Добавить к выбору",

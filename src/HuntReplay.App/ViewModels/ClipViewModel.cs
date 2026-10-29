@@ -48,15 +48,15 @@ internal sealed class ClipViewModel : ObservableObject
     public string Size => LocalizationService.Instance.Format("Unit.MegabytesValue", Clip.Metadata.Bytes / 1024d / 1024);
     public string Date => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM · HH:mm", HuntReplay.Core.Localization.Text.Culture);
     public string Detail => $"{Date}   /   {Size}";
-    private string LongDate => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM yyyy  •  HH:mm", HuntReplay.Core.Localization.Text.Culture);
-    public string Meta => $"{LongDate}  •  {Duration}  •  {Size}";
+    public string When => Clip.Metadata.CreatedAt.ToLocalTime().ToString("dd MMM yyyy  •  HH:mm", HuntReplay.Core.Localization.Text.Culture);
+    // Search text: what the player shows under the clip.
+    public string Meta => $"{When}  •  {Duration}  •  {Size}";
     // Generated names carry the {time} stamp (HH-mm-ss-fff) and read better as their date; a renamed clip keeps its own name.
     private static readonly Regex GeneratedName = new(@"\d{2}-\d{2}-\d{2}-\d{3}", RegexOptions.Compiled);
     private bool HasGeneratedName => GeneratedName.IsMatch(FileName);
     public string Title => HasGeneratedName ? Date : Path.GetFileNameWithoutExtension(FileName);
     // Only a name the user gave the clip is worth a line on the list card; generated names repeat the date.
     public string? CustomName => HasGeneratedName ? null : Path.GetFileNameWithoutExtension(FileName);
-    public string Subtitle => HasGeneratedName ? Size : $"{Date} · {Size}";
     public ImageSource? Thumbnail { get; }
     // A thumbnail file is written once per clip Id, so one decoded by an earlier library refresh is reused as is.
     public ClipViewModel(LibraryClip clip, ImageSource? decoded = null)
