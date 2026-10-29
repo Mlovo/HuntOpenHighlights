@@ -26,7 +26,7 @@
             <Button Grid.Column="2" Content="{Binding LanguageButtonLabel}" Command="{Binding ToggleLanguageCommand}" Background="{DynamicResource SurfaceRaised}" BorderBrush="{DynamicResource Border}" Foreground="{DynamicResource Text}" MinHeight="34" Padding="8,5" ToolTip="Переключить язык / Toggle language" Cursor="Hand"/>
           </Grid>
           <Border Height="1" Background="{DynamicResource Border}" Margin="12,16"/>
-          <Grid Margin="12,0"><TextBlock Text="{Binding AppVersion, StringFormat='STUDIO  /  {0}'}" FontSize="9" Foreground="{DynamicResource Muted}"/><TextBlock Text="LOCAL" FontSize="9" Foreground="{DynamicResource Accent}" HorizontalAlignment="Right"/></Grid>
+          <TextBlock Margin="12,0" Text="{Binding AppVersion, StringFormat='STUDIO  /  {0}'}" FontSize="9" Foreground="{DynamicResource Muted}"/>
         </StackPanel>
         <!-- Fills the space between the menu and the footer block. When it runs short the tagline card gives way first, then this scrolls. -->
         <ScrollViewer x:Name="SidebarScroll" Margin="0,20,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
